@@ -8,6 +8,7 @@ from tkinter import messagebox, simpledialog, ttk
 from app.core.pet_party import PetParty
 from app.core.shop import Shop
 from app.core.save_manager import SaveManager
+from app.core.minigames import open_minigame_selector
 
 
 WINDOW_WIDTH = 1000
@@ -89,18 +90,14 @@ class TamagotchiApp:
         self.pet = self.party.get_current_pet()
 
         self.background_image = None
-        self.pet_image = None
         self.background_canvas_item = None
-        self.pet_canvas_item = None
-        self.shadow_canvas_item = None
-        self.pet_name_canvas_item = None
 
-        self.pet_x = GAME_AREA_WIDTH // 2
-        self.pet_y = GAME_AREA_HEIGHT // 2
-        self.pet_vx = random.choice([-2, -1, 1, 2])
-        self.pet_vy = random.choice([-1, 1])
-        self.walk_phase = 0
-        self.frames_until_direction_change = 45
+        # Estado de animação por pet (índice → dict)
+        self.pet_states = {}
+        self._init_pet_states()
+
+        # Imagens por pet (mantidas para evitar garbage collection)
+        self.pet_images = {}
 
         self.status_bars = {}
 
@@ -109,6 +106,27 @@ class TamagotchiApp:
         self.load_scene_assets()
         self.update_screen()
         self.animate_pet()
+
+    def _init_pet_states(self):
+        """Inicializa posição/velocidade independente para cada pet."""
+        n = len(self.party.pets)
+        # Distribui os pets horizontalmente para não sobrepor no início
+        section_w = GAME_AREA_WIDTH // max(n, 1)
+        for i, pet in enumerate(self.party.pets):
+            start_x = section_w * i + section_w // 2
+            start_x = max(PET_AREA_MARGIN, min(GAME_AREA_WIDTH - PET_AREA_MARGIN, start_x))
+            self.pet_states[i] = {
+                "x": start_x,
+                "y": GAME_AREA_HEIGHT // 2,
+                "vx": random.choice([-2, -1, 1, 2]),
+                "vy": random.choice([-1, 1]),
+                "walk_phase": random.uniform(0, 6.28),
+                "frames_until_change": random.randint(35, 90),
+                "canvas_pet": None,
+                "canvas_shadow": None,
+                "canvas_highlight": None,
+                "canvas_name": None,
+            }
 
     def setup_styles(self):
         self.style = ttk.Style()
@@ -174,14 +192,17 @@ class TamagotchiApp:
         self.status_tab = tk.Frame(self.tabs, bg="#f2f2f2")
         self.actions_tab = tk.Frame(self.tabs, bg="#f2f2f2")
         self.scenario_tab = tk.Frame(self.tabs, bg="#f2f2f2")
+        self.pets_tab = tk.Frame(self.tabs, bg="#f2f2f2")
 
         self.tabs.add(self.status_tab, text="Status")
         self.tabs.add(self.actions_tab, text="Ações")
         self.tabs.add(self.scenario_tab, text="Cenário")
+        self.tabs.add(self.pets_tab, text="Pets")
 
         self.create_status_tab()
         self.create_actions_tab()
         self.create_scenario_tab()
+        self.create_pets_tab()
 
     def create_status_tab(self):
         self.pet_label = tk.Label(
@@ -211,11 +232,6 @@ class TamagotchiApp:
         self.create_status_bar("Higiene", "hygiene")
         self.create_status_bar("Saúde", "health")
 
-        separator = tk.Frame(self.status_tab, height=2, bg="#cccccc")
-        separator.pack(fill="x", pady=8)
-
-        self.create_pet_selector(parent=self.status_tab)
-
     def create_actions_tab(self):
         actions_title = tk.Label(
             self.actions_tab,
@@ -239,7 +255,7 @@ class TamagotchiApp:
             ("🎾 Brincar", self.play_pet),
             ("💤 Dormir", self.sleep_pet),
             ("🛁 Banho", self.bath_pet),
-            ("💼 Trabalhar", self.work),
+            ("💼 Minijogos", self.open_minigames),
             ("🛒 Loja", self.open_shop),
             ("🎒 Inventário", self.open_inventory),
             ("💾 Salvar", self.save_game),
@@ -342,26 +358,32 @@ class TamagotchiApp:
             return None
 
     def load_scene_assets(self):
+        # Cenário do pet atualmente selecionado define o fundo
         scenario_data = SCENARIOS.get(self.pet.scenario, SCENARIOS["Casa"])
-
         self.background_image = self.load_image(scenario_data["background"])
 
-        scenario_key = scenario_data["key"]
-        pet_key = self.pet.asset_key
+        # Carrega imagem para CADA pet
+        self.pet_images = {}
+        for i, pet in enumerate(self.party.pets):
+            sc_data = SCENARIOS.get(pet.scenario, SCENARIOS["Casa"])
+            scenario_key = sc_data["key"]
+            pet_key = pet.asset_key
 
-        if self.pet.collapsed:
-            self.pet_image = (
-                self.load_image(f"assets/pets/{pet_key}_desmaio.png")
-                or self.load_image("assets/pets/pet_desmaio.png")
-            )
-        elif self.pet.sick:
-            self.pet_image = (
-                self.load_image(f"assets/pets/{pet_key}_doente.png")
-                or self.load_image("assets/pets/pet_doente.png")
-                or self.load_image(f"assets/pets/{pet_key}_{scenario_key}.png")
-            )
-        else:
-            self.pet_image = self.load_image(f"assets/pets/{pet_key}_{scenario_key}.png")
+            if pet.collapsed:
+                img = (
+                    self.load_image(f"assets/pets/{pet_key}_desmaio.png")
+                    or self.load_image("assets/pets/pet_desmaio.png")
+                )
+            elif pet.sick:
+                img = (
+                    self.load_image(f"assets/pets/{pet_key}_doente.png")
+                    or self.load_image("assets/pets/pet_doente.png")
+                    or self.load_image(f"assets/pets/{pet_key}_{scenario_key}.png")
+                )
+            else:
+                img = self.load_image(f"assets/pets/{pet_key}_{scenario_key}.png")
+
+            self.pet_images[i] = img
 
         self.draw_scene()
 
@@ -372,88 +394,78 @@ class TamagotchiApp:
 
         if self.background_image:
             self.background_canvas_item = self.canvas.create_image(
-                0,
-                0,
-                image=self.background_image,
-                anchor="nw"
+                0, 0, image=self.background_image, anchor="nw"
             )
         else:
             self.canvas.create_rectangle(
-                0,
-                0,
-                GAME_AREA_WIDTH,
-                GAME_AREA_HEIGHT,
-                fill=scenario_data["fallback_color"],
-                outline=""
+                0, 0, GAME_AREA_WIDTH, GAME_AREA_HEIGHT,
+                fill=scenario_data["fallback_color"], outline=""
             )
-
             self.canvas.create_text(
-                GAME_AREA_WIDTH // 2,
-                50,
+                GAME_AREA_WIDTH // 2, 50,
                 text=scenario_data["display_name"],
-                font=("Arial", 28, "bold"),
-                fill="#303030"
+                font=("Arial", 28, "bold"), fill="#303030"
             )
-
             self.canvas.create_text(
-                GAME_AREA_WIDTH // 2,
-                88,
+                GAME_AREA_WIDTH // 2, 88,
                 text=scenario_data["description"],
-                font=("Arial", 12),
-                fill="#303030"
+                font=("Arial", 12), fill="#303030"
             )
 
-        self.shadow_canvas_item = self.canvas.create_oval(
-            self.pet_x - 35,
-            self.pet_y + 34,
-            self.pet_x + 35,
-            self.pet_y + 45,
-            fill="#000000",
-            outline="",
-            stipple="gray50"
-        )
+        selected_index = self.party.current_pet_index
 
-        if self.pet_image:
-            self.pet_canvas_item = self.canvas.create_image(
-                self.pet_x,
-                self.pet_y,
-                image=self.pet_image,
-                anchor="center"
-            )
-        else:
-            self.pet_canvas_item = self.canvas.create_text(
-                self.pet_x,
-                self.pet_y,
-                text=self.get_fallback_pet_visual(),
-                font=("Arial", PET_SIZE_FALLBACK),
-                anchor="center"
+        for i, pet in enumerate(self.party.pets):
+            state = self.pet_states[i]
+            px, py = state["x"], state["y"]
+            is_selected = (i == selected_index)
+
+            # Destaque dourado (animado) — criado antes da sombra preta
+            if is_selected:
+                state["canvas_highlight"] = self.canvas.create_oval(
+                    px - 44, py + 34, px + 44, py + 50,
+                    fill="#FFD700", outline="", stipple="gray50"
+                )
+            else:
+                state["canvas_highlight"] = None
+
+            # Sombra preta
+            state["canvas_shadow"] = self.canvas.create_oval(
+                px - 35, py + 36, px + 35, py + 47,
+                fill="#000000", outline="", stipple="gray50"
             )
 
-        self.pet_name_canvas_item = self.canvas.create_text(
-            self.pet_x,
-            self.pet_y - 65,
-            text=self.pet.name,
-            font=("Arial", 13, "bold"),
-            fill="#ffffff"
-        )
+            # Imagem ou emoji do pet
+            img = self.pet_images.get(i)
+            if img:
+                state["canvas_pet"] = self.canvas.create_image(
+                    px, py, image=img, anchor="center"
+                )
+            else:
+                state["canvas_pet"] = self.canvas.create_text(
+                    px, py,
+                    text=self.get_fallback_pet_visual_for(pet),
+                    font=("Arial", PET_SIZE_FALLBACK),
+                    anchor="center"
+                )
 
+            # Nome do pet
+            name_color = "#FFD700" if is_selected else "#ffffff"
+            state["canvas_name"] = self.canvas.create_text(
+                px, py - 65,
+                text=pet.name,
+                font=("Arial", 13, "bold"),
+                fill=name_color
+            )
+
+        # Barra inferior de info
         self.canvas.create_rectangle(
-            0,
-            GAME_AREA_HEIGHT - 34,
-            GAME_AREA_WIDTH,
-            GAME_AREA_HEIGHT,
-            fill="#000000",
-            outline="",
-            stipple="gray50"
+            0, GAME_AREA_HEIGHT - 34, GAME_AREA_WIDTH, GAME_AREA_HEIGHT,
+            fill="#000000", outline="", stipple="gray50"
         )
-
         self.canvas.create_text(
-            15,
-            GAME_AREA_HEIGHT - 18,
-            text=f"Cenário: {self.pet.scenario}",
-            font=("Arial", 11, "bold"),
-            fill="#ffffff",
-            anchor="w"
+            15, GAME_AREA_HEIGHT - 18,
+            text=f"Cenário: {self.pet.scenario}  |  Visualizando: {self.pet.name}",
+            font=("Arial", 11, "bold"), fill="#ffffff", anchor="w"
         )
 
     def get_fallback_pet_visual(self):
@@ -477,70 +489,78 @@ class TamagotchiApp:
         return fallback_by_pet.get(self.pet.asset_key, "🐣")
 
     def animate_pet(self):
-        if not self.pet.collapsed:
-            self.walk_phase += 0.25
-            vertical_bob = math.sin(self.walk_phase) * 5
+        for i, pet in enumerate(self.party.pets):
+            state = self.pet_states[i]
 
-            self.pet_x += self.pet_vx
-            self.pet_y += self.pet_vy
+            if not pet.collapsed:
+                state["walk_phase"] += 0.25
+                vertical_bob = math.sin(state["walk_phase"]) * 5
 
-            min_x = PET_AREA_MARGIN
-            max_x = GAME_AREA_WIDTH - PET_AREA_MARGIN
-            min_y = 130
-            max_y = GAME_AREA_HEIGHT - 90
+                state["x"] += state["vx"]
+                state["y"] += state["vy"]
 
-            if self.pet_x <= min_x or self.pet_x >= max_x:
-                self.pet_vx *= -1
+                min_x = PET_AREA_MARGIN
+                max_x = GAME_AREA_WIDTH - PET_AREA_MARGIN
+                min_y = 130
+                max_y = GAME_AREA_HEIGHT - 90
 
-            if self.pet_y <= min_y or self.pet_y >= max_y:
-                self.pet_vy *= -1
+                if state["x"] <= min_x or state["x"] >= max_x:
+                    state["vx"] *= -1
+                if state["y"] <= min_y or state["y"] >= max_y:
+                    state["vy"] *= -1
 
-            self.pet_x = max(min_x, min(max_x, self.pet_x))
-            self.pet_y = max(min_y, min(max_y, self.pet_y))
+                state["x"] = max(min_x, min(max_x, state["x"]))
+                state["y"] = max(min_y, min(max_y, state["y"]))
 
-            self.frames_until_direction_change -= 1
+                state["frames_until_change"] -= 1
+                if state["frames_until_change"] <= 0:
+                    state["vx"] = random.choice([-2, -1, 1, 2])
+                    state["vy"] = random.choice([-1, 0, 1])
+                    if state["vy"] == 0 and random.random() < 0.5:
+                        state["vy"] = random.choice([-1, 1])
+                    state["frames_until_change"] = random.randint(35, 90)
 
-            if self.frames_until_direction_change <= 0:
-                self.randomize_pet_direction()
-                self.frames_until_direction_change = random.randint(35, 90)
+                display_y = state["y"] + vertical_bob
+            else:
+                display_y = state["y"]
 
-            display_y = self.pet_y + vertical_bob
-        else:
-            display_y = self.pet_y
+            px = state["x"]
 
-        if self.shadow_canvas_item:
-            self.canvas.coords(
-                self.shadow_canvas_item,
-                self.pet_x - 38,
-                self.pet_y + 38,
-                self.pet_x + 38,
-                self.pet_y + 48
-            )
-
-        if self.pet_canvas_item:
-            self.canvas.coords(
-                self.pet_canvas_item,
-                self.pet_x,
-                display_y
-            )
-
-        if self.pet_name_canvas_item:
-            self.canvas.coords(
-                self.pet_name_canvas_item,
-                self.pet_x,
-                display_y - 68
-            )
+            if state["canvas_highlight"]:
+                self.canvas.coords(
+                    state["canvas_highlight"],
+                    px - 44, state["y"] + 34,
+                    px + 44, state["y"] + 50
+                )
+            if state["canvas_shadow"]:
+                self.canvas.coords(
+                    state["canvas_shadow"],
+                    px - 35, state["y"] + 36,
+                    px + 35, state["y"] + 47
+                )
+            if state["canvas_pet"]:
+                self.canvas.coords(state["canvas_pet"], px, display_y)
+            if state["canvas_name"]:
+                self.canvas.coords(state["canvas_name"], px, display_y - 68)
 
         self.root.after(35, self.animate_pet)
 
-    def randomize_pet_direction(self):
-        possible_speeds = [-2, -1, 1, 2]
-
-        self.pet_vx = random.choice(possible_speeds)
-        self.pet_vy = random.choice([-1, 0, 1])
-
-        if self.pet_vy == 0 and random.random() < 0.5:
-            self.pet_vy = random.choice([-1, 1])
+    def get_fallback_pet_visual_for(self, pet):
+        if pet.collapsed:
+            return "😵"
+        if pet.sick:
+            return "🤒"
+        fallback_by_pet = {
+            "felix": "🐱",
+            "bangchan": "🐺",
+            "hyunjin": "🦙",
+            "han": "🐿️",
+            "changbin": "🐷",
+            "leeknow": "🐰",
+            "in": "🦊",
+            "seungmin": "🐶",
+        }
+        return fallback_by_pet.get(pet.asset_key, "🐣")
 
     def get_progress_style(self, value):
         if value >= 60:
@@ -605,10 +625,15 @@ class TamagotchiApp:
         messagebox.showinfo("Ação", message)
         self.refresh_after_action()
 
-    def work(self):
-        message = self.pet.work()
-        messagebox.showinfo("Trabalho", message)
+    def open_minigames(self):
+        if self.pet.energy < 10:
+            messagebox.showwarning("Minijogos", f"{self.pet.name} está cansado demais para jogar!")
+            return
+        open_minigame_selector(self.root, self.pet, self._on_minigame_finish)
+
+    def _on_minigame_finish(self, coins, result):
         self.refresh_after_action()
+        messagebox.showinfo("Minijogo", f"{result}\n+{coins} moedas para {self.pet.name}!")
 
     def change_scenario(self, scenario):
         self.pet.change_scenario(scenario)
@@ -708,16 +733,59 @@ class TamagotchiApp:
         self.party.select_pet(index)
         self.pet = self.party.get_current_pet()
 
-        self.pet_x = GAME_AREA_WIDTH // 2
-        self.pet_y = GAME_AREA_HEIGHT // 2
-
         self.load_scene_assets()
         self.update_screen()
+        self.update_pet_buttons()
+
+    def create_pets_tab(self):
+        tk.Label(
+            self.pets_tab,
+            text="Selecionar Pet",
+            font=("Arial", 15, "bold"),
+            bg="#f2f2f2"
+        ).pack(pady=10)
+
+        tk.Label(
+            self.pets_tab,
+            text="Clique em um pet para ver seus\nstatus e realizar ações nele.\nO pet selecionado fica destacado\nem dourado no cenário.",
+            font=("Arial", 10),
+            bg="#f2f2f2",
+            justify="center"
+        ).pack(pady=4)
+
+        separator = tk.Frame(self.pets_tab, height=2, bg="#cccccc")
+        separator.pack(fill="x", pady=8, padx=10)
+
+        self.pet_buttons = []
+        grid = tk.Frame(self.pets_tab, bg="#f2f2f2")
+        grid.pack(pady=5)
+
+        for index, pet in enumerate(self.party.pets):
+            btn = tk.Button(
+                grid,
+                text=pet.name,
+                width=13,
+                height=2,
+                font=("Arial", 10),
+                command=lambda i=index: self.select_pet(i)
+            )
+            btn.grid(row=index // 2, column=index % 2, padx=5, pady=4)
+            self.pet_buttons.append(btn)
+
+        self.update_pet_buttons()
+
+    def update_pet_buttons(self):
+        selected = self.party.current_pet_index
+        for i, btn in enumerate(self.pet_buttons):
+            if i == selected:
+                btn.config(bg="#FFD700", relief="sunken", font=("Arial", 10, "bold"))
+            else:
+                btn.config(bg="SystemButtonFace", relief="raised", font=("Arial", 10))
 
     def create_pet_selector(self, parent):
         selector_title = tk.Label(
             parent,
-            text="Pets",
+            text="Ver Status do Pet",
             font=("Arial", 15, "bold"),
             bg="#f2f2f2"
         )
