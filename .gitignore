@@ -1,2 +1,4 @@
 _init_.py
-adjust.txt
+adjust.txt__pycache__/
+*.pyc
+save.json
