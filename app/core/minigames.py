@@ -1,18 +1,41 @@
+import os
+import sys
 import tkinter as tk
 from tkinter import messagebox
 import random
 import time
 
 
-# ---------------------------------------------------------------------------
-# Recompensas por minijogo
-# ---------------------------------------------------------------------------
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
+
 REWARDS = {
-    "memory":    {"win": 18, "lose": 5},
-    "dino":      {"win": 15, "lose": 4},
-    "flappy":    {"win": 20, "lose": 5},
-    "crossroad": {"win": 14, "lose": 4},
-    "maze":      {"win": 22, "lose": 6},
+    "memory": {
+        "win": {"coins": 18, "happiness": 12},
+        "lose": {"coins": 5, "happiness": 4},
+    },
+    "dino": {
+        "win": {"coins": 15, "happiness": 10},
+        "lose": {"coins": 4, "happiness": 3},
+    },
+    "flappy": {
+        "win": {"coins": 20, "happiness": 14},
+        "lose": {"coins": 5, "happiness": 4},
+    },
+    "crossroad": {
+        "win": {"coins": 14, "happiness": 10},
+        "lose": {"coins": 4, "happiness": 3},
+    },
+    "maze": {
+        "win": {"coins": 22, "happiness": 16},
+        "lose": {"coins": 6, "happiness": 5},
+    },
 }
 
 
@@ -23,7 +46,7 @@ def open_minigame_selector(parent, pet, on_finish):
     """
     win = tk.Toplevel(parent)
     win.title("Minijogos")
-    win.geometry("380x420")
+    win.geometry("420x460")
     win.resizable(False, False)
     win.grab_set()
 
@@ -32,6 +55,22 @@ def open_minigame_selector(parent, pet, on_finish):
     tk.Label(win,
              text=f"Moedas de {pet.name}: {pet.money}",
              font=("Arial", 11)).pack(pady=2)
+
+    icon_path = resource_path(f"assets/icons/{pet.asset_key}_icon.png")
+    pet_icon = None
+
+    if os.path.exists(icon_path):
+        try:
+            pet_icon = tk.PhotoImage(file=icon_path)
+        except tk.TclError:
+            pet_icon = None
+
+    if pet_icon:
+        icon_label = tk.Label(win, image=pet_icon)
+        icon_label.image = pet_icon
+        icon_label.pack(pady=6)
+    else:
+        tk.Label(win, text=pet.name, font=("Arial", 13, "bold")).pack(pady=6)
 
     games = [
         ("🃏 Jogo da Memória",  "memory"),
@@ -43,7 +82,11 @@ def open_minigame_selector(parent, pet, on_finish):
 
     for label, key in games:
         r = REWARDS[key]
-        desc = f"{label}\n  Vitória: +{r['win']} moedas  |  Derrota: +{r['lose']} moedas"
+        desc = (
+            f"{label}\n"
+            f"Vitória: +{r['win']['coins']} moedas / +{r['win']['happiness']} felicidade\n"
+            f"Derrota: +{r['lose']['coins']} moedas / +{r['lose']['happiness']} felicidade"
+        )
         tk.Button(
             win,
             text=desc,
@@ -76,6 +119,9 @@ class BaseGame:
         self.key = key
         self.finished = False
 
+        self.pet_icon = self._load_pet_icon(subsample=2)
+        self.pet_icon_big = self._load_pet_icon(subsample=1)
+
         self.win = tk.Toplevel()
         self.win.title(title)
         self.win.geometry(f"{width}x{height}")
@@ -83,24 +129,70 @@ class BaseGame:
         self.win.grab_set()
         self.win.protocol("WM_DELETE_WINDOW", self._on_close)
 
+    def _load_pet_icon(self, subsample=1):
+        icon_path = resource_path(f"assets/icons/{self.pet.asset_key}_icon.png")
+
+        if not os.path.exists(icon_path):
+            return None
+
+        try:
+            image = tk.PhotoImage(file=icon_path)
+
+            if subsample > 1:
+                image = image.subsample(subsample, subsample)
+
+            return image
+
+        except tk.TclError:
+            return None
+
+    def _draw_player_icon(self, canvas, x, y, fallback="●"):
+        if self.pet_icon:
+            return canvas.create_image(x, y, image=self.pet_icon, anchor="center")
+
+        return canvas.create_text(
+            x,
+            y,
+            text=fallback,
+            font=("Arial", 24),
+            anchor="center"
+        )
+
+    def _coords_player_icon(self, canvas, item, x, y):
+        canvas.coords(item, x, y)
+
     def _reward(self, won):
         if self.finished:
             return
+
         self.finished = True
-        r = REWARDS[self.key]
-        coins = r["win"] if won else r["lose"]
+
+        result_key = "win" if won else "lose"
+        reward = REWARDS[self.key][result_key]
+
+        coins = reward["coins"]
+        happiness = reward["happiness"]
+
         self.pet.money += coins
-        self.pet.energy -= 8
-        self.pet.hunger -= 4
+        self.pet.happiness += happiness
+
+        self.pet.energy -= 4
+        self.pet.hunger -= 2
+
         self.pet.limit_attributes()
+
         self.win.destroy()
+
         result = "Vitória!" if won else "Derrota!"
-        self.on_finish(coins, result)
+
+        try:
+            self.on_finish(coins, result, happiness)
+        except TypeError:
+            self.on_finish(coins, result)
 
     def _on_close(self):
         if not self.finished:
             self._reward(False)
-
 
 # ===========================================================================
 # 1. JOGO DA MEMÓRIA
@@ -120,6 +212,16 @@ class MemoryGame(BaseGame):
         self.locked = False
 
         tk.Label(self.win, text="Encontre os pares!", font=("Arial",13,"bold")).pack(pady=6)
+        if self.pet_icon_big:
+            icon_label = tk.Label(self.win, image=self.pet_icon_big)
+            icon_label.image = self.pet_icon_big
+            icon_label.pack(pady=4)
+        else:
+            tk.Label(
+                self.win,
+                text=self.pet.name,
+                font=("Arial", 12, "bold")
+            ).pack(pady=4)
         self.info = tk.Label(self.win, text="", font=("Arial",10))
         self.info.pack()
 
@@ -204,16 +306,11 @@ class DinoGame(BaseGame):
         self.canvas.create_line(0, self.H - 30, self.W, self.H - 30, fill="#888", width=2)
 
         # dino (retângulo verde simples)
-        self.dino = self.canvas.create_rectangle(
-            self.dino_x, self.dino_y - 30,
-            self.dino_x + 30, self.dino_y,
-            fill="#4caf50", outline="#2e7d32"
-        )
-        # olho
-        self.dino_eye = self.canvas.create_oval(
-            self.dino_x + 20, self.dino_y - 28,
-            self.dino_x + 27, self.dino_y - 21,
-            fill="white", outline=""
+        self.dino = self._draw_player_icon(
+            self.canvas,
+            self.dino_x + 15,
+            self.dino_y - 15,
+            fallback="🦕"
         )
 
         self.win.bind("<space>", self._jump)
@@ -246,15 +343,11 @@ class DinoGame(BaseGame):
             self.dino_vy = 0
             self.on_ground = True
 
-        self.canvas.coords(
+        self._coords_player_icon(
+            self.canvas,
             self.dino,
-            self.dino_x, self.dino_y - 30,
-            self.dino_x + 30, self.dino_y
-        )
-        self.canvas.coords(
-            self.dino_eye,
-            self.dino_x + 20, self.dino_y - 28,
-            self.dino_x + 27, self.dino_y - 21
+            self.dino_x + 15,
+            self.dino_y - 15
         )
 
         # obstáculos
@@ -328,10 +421,11 @@ class FlappyGame(BaseGame):
         )
 
         # pássaro
-        self.bird = self.canvas.create_oval(
-            self.bird_x - 14, self.bird_y - 12,
-            self.bird_x + 14, self.bird_y + 12,
-            fill="#ffeb3b", outline="#f9a825"
+        self.bird = self._draw_player_icon(
+            self.canvas,
+            self.bird_x,
+            self.bird_y,
+            fallback="🐦"
         )
         self.score_txt = self.canvas.create_text(
             10, 10, anchor="nw",
@@ -353,10 +447,11 @@ class FlappyGame(BaseGame):
         # física do pássaro
         self.bird_vy += 0.5
         self.bird_y += self.bird_vy
-        self.canvas.coords(
+        self._coords_player_icon(
+            self.canvas,
             self.bird,
-            self.bird_x - 14, self.bird_y - 12,
-            self.bird_x + 14, self.bird_y + 12
+            self.bird_x,
+            self.bird_y
         )
 
         # morreu: chão ou teto
@@ -507,10 +602,15 @@ class CrossroadGame(BaseGame):
                                              fill="#e53935", outline="#b71c1c")
 
         # jogador
-        px1 = self.px * self.CELL + 6
-        py1 = self.py * self.CELL + 6
-        self.canvas.create_oval(px1, py1, px1 + 30, py1 + 30,
-                                fill="#1565c0", outline="#0d47a1")
+        player_x = self.px * self.CELL + self.CELL // 2
+        player_y = self.py * self.CELL + self.CELL // 2
+
+        self._draw_player_icon(
+            self.canvas,
+            player_x,
+            player_y,
+            fallback="🐾"
+        )
 
         self.info_txt = self.canvas.create_text(
             5, 2, anchor="nw",
@@ -648,10 +748,15 @@ class MazeGame(BaseGame):
         self.canvas.create_text(gx, gy, text="🏁", font=("Arial", 18))
 
         # jogador
-        px1 = self.px * C + 8
-        py1 = self.py * C + 8
-        self.canvas.create_oval(px1, py1, px1 + C - 16, py1 + C - 16,
-                                fill="#f9a825", outline="#e65100")
+        player_x = self.px * C + C // 2
+        player_y = self.py * C + C // 2
+
+        self._draw_player_icon(
+            self.canvas,
+            player_x,
+            player_y,
+            fallback="🐾"
+        )
 
     def _move(self, dx, dy):
         dirs_map = {(0, -1): "N", (0, 1): "S", (1, 0): "E", (-1, 0): "W"}

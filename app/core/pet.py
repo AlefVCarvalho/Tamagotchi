@@ -43,18 +43,6 @@ class Pet:
         self.pass_time()
         return f"{self.name} foi alimentado."
 
-    def play(self):
-        if self.energy < 10:
-            return f"{self.name} está cansado demais para brincar."
-
-        self.happiness += 28
-        self.energy -= 6
-        self.hunger -= 4
-        self.hygiene -= 3
-
-        self.pass_time()
-        return f"Você brincou com {self.name}."
-
     def sleep(self):
         self.energy += 35
         self.health += 5
@@ -70,20 +58,6 @@ class Pet:
 
         self.pass_time()
         return f"{self.name} tomou banho."
-
-    def work(self):
-        if self.energy < 15:
-            return f"{self.name} está cansado demais para trabalhar."
-
-        earned = random.randint(10, 22)
-
-        self.money += earned
-        self.energy -= 10
-        self.hunger -= 5
-        self.happiness -= 3
-
-        self.pass_time()
-        return f"{self.name} trabalhou e ganhou {earned} moedas."
 
     def use_medicine(self):
         if not self.sick:

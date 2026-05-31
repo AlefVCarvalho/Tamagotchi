@@ -4,6 +4,7 @@ import math
 import random
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
+from app.core.minigames import open_minigame_selector
 
 from app.core.pet_party import PetParty
 from app.core.shop import Shop
@@ -252,10 +253,9 @@ class TamagotchiApp:
 
         buttons = [
             ("🍗 Alimentar", self.feed_pet),
-            ("🎾 Brincar", self.play_pet),
             ("💤 Dormir", self.sleep_pet),
             ("🛁 Banho", self.bath_pet),
-            ("💼 Minijogos", self.open_minigames),
+            ("🎮 Minijogos", self.open_minigames),
             ("🛒 Loja", self.open_shop),
             ("🎒 Inventário", self.open_inventory),
             ("💾 Salvar", self.save_game),
@@ -610,11 +610,6 @@ class TamagotchiApp:
         messagebox.showinfo("Ação", message)
         self.refresh_after_action()
 
-    def play_pet(self):
-        message = self.pet.play()
-        messagebox.showinfo("Ação", message)
-        self.refresh_after_action()
-
     def sleep_pet(self):
         message = self.pet.sleep()
         messagebox.showinfo("Ação", message)
@@ -802,3 +797,18 @@ class TamagotchiApp:
                 command=lambda i=index: self.select_pet(i)
             )
             button.grid(row=index // 2, column=index % 2, padx=4, pady=3)
+
+def open_minigames(self):
+    open_minigame_selector(
+        self.root,
+        self.pet,
+        self.on_minigame_finish
+    )
+
+
+def on_minigame_finish(self, coins, result, happiness=0):
+    messagebox.showinfo(
+        "Minijogo",
+        f"{result}\n+{coins} moedas\n+{happiness} felicidade"
+    )
+    self.refresh_after_action()
