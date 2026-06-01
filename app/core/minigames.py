@@ -11,94 +11,221 @@ def resource_path(relative_path):
         base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.abspath(".")
-
     return os.path.join(base_path, relative_path)
 
 
-REWARDS = {
+def load_png(relative_path, subsample=1):
+    """Carrega um PhotoImage PNG, retornando None se não existir."""
+    path = resource_path(relative_path)
+    if not os.path.exists(path):
+        return None
+    try:
+        img = tk.PhotoImage(file=path)
+        if subsample > 1:
+            img = img.subsample(subsample, subsample)
+        return img
+    except tk.TclError:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Configuração de dificuldade por jogo
+# Cada entrada: (label_ui, multiplicador_recompensa, params_específicos)
+# ---------------------------------------------------------------------------
+DIFFICULTY_CONFIG = {
     "memory": {
-        "win": {"coins": 18, "happiness": 12},
-        "lose": {"coins": 5, "happiness": 4},
+        "fácil":  {"reward_mult": 1.0, "grid": 4, "time_limit": 90},
+        "médio":  {"reward_mult": 1.5, "grid": 5, "time_limit": 60},
+        "difícil":{"reward_mult": 2.2, "grid": 6, "time_limit": 40},
     },
     "dino": {
-        "win": {"coins": 15, "happiness": 10},
-        "lose": {"coins": 4, "happiness": 3},
+        "fácil":  {"reward_mult": 1.0, "obs_density": 0.6, "survive_time": 12},
+        "médio":  {"reward_mult": 1.5, "obs_density": 1.0, "survive_time": 18},
+        "difícil":{"reward_mult": 2.2, "obs_density": 1.5, "survive_time": 25},
     },
     "flappy": {
-        "win": {"coins": 20, "happiness": 14},
-        "lose": {"coins": 5, "happiness": 4},
+        "fácil":  {"reward_mult": 1.0, "pipe_density": 0.7, "target_pipes": 8,  "time_limit": 120},
+        "médio":  {"reward_mult": 1.5, "pipe_density": 1.0, "target_pipes": 12, "time_limit": 90},
+        "difícil":{"reward_mult": 2.2, "pipe_density": 1.4, "target_pipes": 18, "time_limit": 60},
     },
     "crossroad": {
-        "win": {"coins": 14, "happiness": 10},
-        "lose": {"coins": 4, "happiness": 3},
+        "fácil":  {"reward_mult": 1.0, "speed_mult": 0.7, "extra_lanes": 0, "time_limit": 90},
+        "médio":  {"reward_mult": 1.5, "speed_mult": 1.0, "extra_lanes": 1, "time_limit": 60},
+        "difícil":{"reward_mult": 2.2, "speed_mult": 1.5, "extra_lanes": 2, "time_limit": 40},
     },
     "maze": {
-        "win": {"coins": 22, "happiness": 16},
-        "lose": {"coins": 6, "happiness": 5},
+        "fácil":  {"reward_mult": 1.0, "size": 8,  "time_limit": 120},
+        "médio":  {"reward_mult": 1.5, "size": 12, "time_limit": 80},
+        "difícil":{"reward_mult": 2.2, "size": 16, "time_limit": 50},
     },
 }
 
+BASE_REWARDS = {
+    "memory":    {"win": {"coins": 18, "happiness": 12, "xp": 30}, "lose": {"coins": 5,  "happiness": 4, "xp": 8}},
+    "dino":      {"win": {"coins": 15, "happiness": 10, "xp": 25}, "lose": {"coins": 4,  "happiness": 3, "xp": 6}},
+    "flappy":    {"win": {"coins": 20, "happiness": 14, "xp": 35}, "lose": {"coins": 5,  "happiness": 4, "xp": 8}},
+    "crossroad": {"win": {"coins": 14, "happiness": 10, "xp": 25}, "lose": {"coins": 4,  "happiness": 3, "xp": 6}},
+    "maze":      {"win": {"coins": 22, "happiness": 16, "xp": 40}, "lose": {"coins": 6,  "happiness": 5, "xp": 10}},
+}
 
-def open_minigame_selector(parent, pet, on_finish):
-    """
-    Abre a janela de seleção de minijogos.
-    on_finish(moedas_ganhas) é chamado ao fechar.
-    """
+DIFF_LABELS = ["fácil", "médio", "difícil"]
+DIFF_COLORS = {"fácil": "#4caf50", "médio": "#ff9800", "difícil": "#e53935"}
+DIFF_EMOJIS = {"fácil": "🟢", "médio": "🟡", "difícil": "🔴"}
+
+DEFAULT_PINK_BG = "#FFF0F6"
+
+
+def _scaled_reward(key, difficulty, won):
+    base = BASE_REWARDS[key]["win" if won else "lose"]
+    mult = DIFFICULTY_CONFIG[key][difficulty]["reward_mult"]
+    return {k: max(1, int(v * mult)) for k, v in base.items()}
+
+
+# ---------------------------------------------------------------------------
+# Tela 1 — Seletor de minijogo
+# ---------------------------------------------------------------------------
+def open_minigame_selector(parent, pet, party, on_finish):
     win = tk.Toplevel(parent)
     win.title("Minijogos")
-    win.geometry("420x460")
+    win.geometry("520x620")
     win.resizable(False, False)
     win.grab_set()
+    win.configure(bg="#FFF0F6")
 
-    tk.Label(win, text="Escolha um Minijogo",
-             font=("Arial", 16, "bold")).pack(pady=12)
-    tk.Label(win,
-             text=f"Moedas de {pet.name}: {pet.money}",
-             font=("Arial", 11)).pack(pady=2)
+    tk.Label(win, text="🎮  Minijogos", font=("Arial", 18, "bold"),
+             bg="#FFF0F6", fg="#C2185B").pack(pady=(14, 2))
+    tk.Label(win, text=f"💰  Moedas: {party.money}", font=("Arial", 11),
+             bg="#FFF0F6", fg="#AD1457").pack(pady=(0, 10))
 
+    # Ícone do pet
     icon_path = resource_path(f"assets/icons/{pet.asset_key}_icon.png")
     pet_icon = None
-
     if os.path.exists(icon_path):
         try:
             pet_icon = tk.PhotoImage(file=icon_path)
         except tk.TclError:
-            pet_icon = None
-
+            pass
     if pet_icon:
-        icon_label = tk.Label(win, image=pet_icon)
-        icon_label.image = pet_icon
-        icon_label.pack(pady=6)
+        lbl = tk.Label(win, image=pet_icon, bg="#FFF0F6", bd=0, highlightthickness=0)
+        lbl.image = pet_icon
+        lbl.pack(pady=4)
     else:
-        tk.Label(win, text=pet.name, font=("Arial", 13, "bold")).pack(pady=6)
+        tk.Label(win, text=pet.name, font=("Arial", 13, "bold"),
+                 bg="#FFF0F6", fg="#C2185B").pack(pady=4)
 
     games = [
-        ("🃏 Jogo da Memória",  "memory"),
-        ("🦕 Dino Run",         "dino"),
-        ("🐦 Flappy Bird",      "flappy"),
-        ("🚗 Crossroad",        "crossroad"),
-        ("🌀 Labirinto",        "maze"),
+        ("🃏  Jogo da Memória", "memory"),
+        ("🦕  Dino Run",        "dino"),
+        ("🐦  Flappy Bird",     "flappy"),
+        ("🚗  Crossroad",       "crossroad"),
+        ("🌀  Labirinto",       "maze"),
     ]
 
+    btn_frame = tk.Frame(win, bg="#FFF0F6")
+    btn_frame.pack(fill="both", expand=True, padx=20, pady=6)
+
     for label, key in games:
-        r = REWARDS[key]
-        desc = (
-            f"{label}\n"
-            f"Vitória: +{r['win']['coins']} moedas / +{r['win']['happiness']} felicidade\n"
-            f"Derrota: +{r['lose']['coins']} moedas / +{r['lose']['happiness']} felicidade"
+        btn = tk.Button(
+            btn_frame, text=label,
+            font=("Arial", 12, "bold"),
+            bg="#F8BBD0", fg="#880E4F",
+            activebackground="#F48FB1", activeforeground="#880E4F",
+            relief="flat", bd=0,
+            cursor="hand2",
+            width=36, height=3,
+            command=lambda k=key, w=win: _open_difficulty(w, k, pet, party, on_finish)
         )
-        tk.Button(
-            win,
-            text=desc,
-            width=38,
-            height=2,
-            font=("Arial", 10),
-            command=lambda k=key: _launch(win, k, pet, on_finish)
-        ).pack(pady=5)
+        btn.pack(pady=5)
 
 
-def _launch(selector_win, key, pet, on_finish):
+# ---------------------------------------------------------------------------
+# Tela 2 — Seletor de dificuldade
+# ---------------------------------------------------------------------------
+def _open_difficulty(selector_win, key, pet, party, on_finish):
     selector_win.destroy()
+
+    game_names = {
+        "memory": "🃏 Jogo da Memória",
+        "dino":   "🦕 Dino Run",
+        "flappy": "🐦 Flappy Bird",
+        "crossroad": "🚗 Crossroad",
+        "maze":   "🌀 Labirinto",
+    }
+
+    win = tk.Toplevel()
+    win.title("Dificuldade")
+    win.geometry("620x700")
+    win.resizable(False, False)
+    win.grab_set()
+    win.configure(bg="#FFF0F6")
+
+    tk.Label(win, text=game_names[key], font=("Arial", 16, "bold"),
+             bg="#FFF0F6", fg="#C2185B").pack(pady=(14, 4))
+    tk.Label(win, text="Escolha a dificuldade:", font=("Arial", 11),
+             bg="#FFF0F6", fg="#aaaaaa").pack(pady=(0, 10))
+
+    for diff in DIFF_LABELS:
+        cfg = DIFFICULTY_CONFIG[key][diff]
+        wr = _scaled_reward(key, diff, True)
+        lr = _scaled_reward(key, diff, False)
+
+        # Monta descrição de parâmetros
+        params_text = _diff_params_text(key, cfg)
+
+        frame = tk.Frame(win, bg=DIFF_COLORS[diff], bd=0)
+        frame.pack(fill="x", padx=18, pady=6)
+
+        inner = tk.Frame(frame, bg="#FFF0F6", padx=10, pady=8)
+        inner.pack(fill="x", padx=2, pady=2)
+
+        header = tk.Frame(inner, bg="#FFF0F6")
+        header.pack(fill="x")
+        tk.Label(header, text=f"{DIFF_EMOJIS[diff]}  {diff.capitalize()}",
+                 font=("Arial", 13, "bold"), bg="#FFF0F6",
+                 fg=DIFF_COLORS[diff], anchor="w").pack(side="left")
+
+        tk.Label(inner, text=params_text, font=("Arial", 9),
+                 bg="#FFF0F6", fg="#cccccc", anchor="w", justify="left").pack(fill="x", pady=(2, 4))
+
+        reward_text = (
+            f"Vitória: +{wr['coins']} moedas  +{wr['happiness']} felicidade  +{wr['xp']} XP\n"
+            f"Derrota: +{lr['coins']} moedas  +{lr['happiness']} felicidade  +{lr['xp']} XP"
+        )
+        tk.Label(inner, text=reward_text, font=("Arial", 9),
+                 bg="#FFF0F6", fg="#ffd700", anchor="w", justify="left").pack(fill="x")
+
+        tk.Button(
+            inner, text="▶  Jogar",
+            font=("Arial", 10, "bold"),
+            bg=DIFF_COLORS[diff], fg="#AD1457",
+            activebackground="#ffffff", activeforeground="#000000",
+            relief="flat", cursor="hand2",
+            command=lambda d=diff, w=win: _launch(w, key, d, pet, party, on_finish)
+        ).pack(anchor="e", pady=(4, 0))
+
+
+def _diff_params_text(key, cfg):
+    """Gera linha de parâmetros legível para cada jogo."""
+    if key == "memory":
+        return f"Grade: {cfg['grid']}×{cfg['grid']}  |  Tempo: {cfg['time_limit']}s"
+    if key == "dino":
+        return f"Tempo para sobreviver: {cfg['survive_time']}s  |  Obstáculos: {'mais' if cfg['obs_density'] > 1 else 'normal' if cfg['obs_density'] == 1 else 'menos'}"
+    if key == "flappy":
+        return f"Canos para passar: {cfg['target_pipes']}  |  Tempo: {cfg['time_limit']}s"
+    if key == "crossroad":
+        lv = cfg['extra_lanes']
+        return f"Tempo: {cfg['time_limit']}s  |  Faixas extras: {lv}  |  Velocidade: {int(cfg['speed_mult']*100)}%"
+    if key == "maze":
+        return f"Grade: {cfg['size']}×{cfg['size']}  |  Tempo: {cfg['time_limit']}s"
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Launch — instancia o jogo com dificuldade
+# ---------------------------------------------------------------------------
+def _launch(diff_win, key, difficulty, pet, party, on_finish):
+    diff_win.destroy()
+    cfg = DIFFICULTY_CONFIG[key][difficulty]
     launchers = {
         "memory":    MemoryGame,
         "dino":      DinoGame,
@@ -106,15 +233,18 @@ def _launch(selector_win, key, pet, on_finish):
         "crossroad": CrossroadGame,
         "maze":      MazeGame,
     }
-    launchers[key](pet, on_finish)
+    launchers[key](pet, party, difficulty, cfg, on_finish)
 
 
-# ---------------------------------------------------------------------------
-# Utilitário: janela base de minijogo
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# BASE GAME
+# ===========================================================================
 class BaseGame:
-    def __init__(self, title, width, height, pet, on_finish, key):
+    def __init__(self, title, width, height, pet, party, difficulty, cfg, on_finish, key):
         self.pet = pet
+        self.party = party
+        self.difficulty = difficulty
+        self.cfg = cfg
         self.on_finish = on_finish
         self.key = key
         self.finished = False
@@ -123,7 +253,7 @@ class BaseGame:
         self.pet_icon_big = self._load_pet_icon(subsample=1)
 
         self.win = tk.Toplevel()
-        self.win.title(title)
+        self.win.title(f"{title}  [{difficulty.capitalize()}]")
         self.win.geometry(f"{width}x{height}")
         self.win.resizable(False, False)
         self.win.grab_set()
@@ -131,32 +261,20 @@ class BaseGame:
 
     def _load_pet_icon(self, subsample=1):
         icon_path = resource_path(f"assets/icons/{self.pet.asset_key}_icon.png")
-
         if not os.path.exists(icon_path):
             return None
-
         try:
-            image = tk.PhotoImage(file=icon_path)
-
+            img = tk.PhotoImage(file=icon_path)
             if subsample > 1:
-                image = image.subsample(subsample, subsample)
-
-            return image
-
+                img = img.subsample(subsample, subsample)
+            return img
         except tk.TclError:
             return None
 
     def _draw_player_icon(self, canvas, x, y, fallback="●"):
         if self.pet_icon:
             return canvas.create_image(x, y, image=self.pet_icon, anchor="center")
-
-        return canvas.create_text(
-            x,
-            y,
-            text=fallback,
-            font=("Arial", 24),
-            anchor="center"
-        )
+        return canvas.create_text(x, y, text=fallback, font=("Arial", 24), anchor="center")
 
     def _coords_player_icon(self, canvas, item, x, y):
         canvas.coords(item, x, y)
@@ -164,29 +282,22 @@ class BaseGame:
     def _reward(self, won):
         if self.finished:
             return
-
         self.finished = True
 
-        result_key = "win" if won else "lose"
-        reward = REWARDS[self.key][result_key]
+        reward = _scaled_reward(self.key, self.difficulty, won)
+        coins, happiness, xp = reward["coins"], reward["happiness"], reward["xp"]
 
-        coins = reward["coins"]
-        happiness = reward["happiness"]
-
-        self.pet.money += coins
+        self.party.money += coins
         self.pet.happiness += happiness
-
         self.pet.energy -= 4
         self.pet.hunger -= 2
-
         self.pet.limit_attributes()
+        self.party.add_xp(xp)
 
         self.win.destroy()
-
-        result = "Vitória!" if won else "Derrota!"
-
+        result = "Vitória! 🎉" if won else "Derrota! 😢"
         try:
-            self.on_finish(coins, result, happiness)
+            self.on_finish(coins, result, happiness, xp)
         except TypeError:
             self.on_finish(coins, result)
 
@@ -194,75 +305,151 @@ class BaseGame:
         if not self.finished:
             self._reward(False)
 
+
 # ===========================================================================
 # 1. JOGO DA MEMÓRIA
 # ===========================================================================
 class MemoryGame(BaseGame):
-    EMOJIS = ["🐱","🐶","🐸","🐧","🦊","🐺","🐷","🐮"]
+    # 18 figuras disponíveis (memory_fig1 … memory_fig18)
+    ALL_FIGS = [f"assets/minigames/memory_fig{i}.png" for i in range(1, 19)]
 
-    def __init__(self, pet, on_finish):
-        super().__init__("🃏 Jogo da Memória", 420, 480, pet, on_finish, "memory")
+    def __init__(self, pet, party, difficulty, cfg, on_finish):
+        self.grid_n = cfg["grid"]           # 4, 5 ou 6
+        self.time_limit = cfg["time_limit"]
+        n_pairs = (self.grid_n * self.grid_n) // 2
 
-        self.cards_val = self.EMOJIS * 2
-        random.shuffle(self.cards_val)
+        # Dimensões da janela: grade + espaço para info
+        cell = 72 if self.grid_n <= 4 else 58 if self.grid_n == 5 else 50
+        self.cell_size = cell
+        W = self.grid_n * cell + 120
+        H = self.grid_n * cell + 220
+
+        super().__init__("🃏 Jogo da Memória", W, H,
+                         pet, party, difficulty, cfg, on_finish, "memory")
+
+        self.win.configure(bg=DEFAULT_PINK_BG)
+
+        # Carrega background
+        self.bg_img = load_png("assets/minigames/memory_background.png")
+
+        # Carrega figuras PNG (fallback para emojis se não houver)
+        self.fig_images = []
+        FALLBACK_EMOJIS = ["🐱","🐶","🐸","🐧","🦊","🐺","🐷","🐮",
+                           "🐯","🐻","🦁","🐨","🦄","🐙","🦋","🐢","🦀","🦜"]
+        for i in range(n_pairs):
+            img = load_png(self.ALL_FIGS[i % len(self.ALL_FIGS)])
+            self.fig_images.append(img)
+        self.fig_fallbacks = FALLBACK_EMOJIS[:n_pairs]
+
+        # Estado do jogo
+        total = self.grid_n * self.grid_n
+        indices = list(range(n_pairs)) * 2
+        # Se grade ímpar (5×5=25 cartas), adiciona uma carta extra repetindo o primeiro par
+        if total % 2 == 1:
+            indices.append(0)
+        random.shuffle(indices)
+        self.card_ids = indices   # índice da figura para cada carta
 
         self.buttons = []
-        self.flipped = []       # índices virados agora
+        self.card_imgs = []   # mantém referências de imagens nos botões
+        self.flipped = []
         self.matched = set()
         self.locked = False
+        self.time_left = self.time_limit
 
-        tk.Label(self.win, text="Encontre os pares!", font=("Arial",13,"bold")).pack(pady=6)
-        if self.pet_icon_big:
-            icon_label = tk.Label(self.win, image=self.pet_icon_big)
-            icon_label.image = self.pet_icon_big
-            icon_label.pack(pady=4)
-        else:
-            tk.Label(
-                self.win,
-                text=self.pet.name,
-                font=("Arial", 12, "bold")
-            ).pack(pady=4)
-        self.info = tk.Label(self.win, text="", font=("Arial",10))
-        self.info.pack()
+        # --- UI ---
+        top = tk.Frame(self.win, bg="#FFF0F6")
+        top.pack(fill="x", pady=4, padx=8)
 
-        grid = tk.Frame(self.win)
-        grid.pack(pady=8)
+        self.info_lbl = tk.Label(top, text="", font=("Arial", 10, "bold"),
+                                  bg="#FFF0F6", fg="#C2185B", anchor="w")
+        self.info_lbl.pack(side="left")
 
-        for i in range(16):
-            btn = tk.Button(grid, text="?", width=4, height=2,
-                            font=("Arial",16),
-                            command=lambda idx=i: self._flip(idx))
-            btn.grid(row=i//4, column=i%4, padx=4, pady=4)
+        self.timer_lbl = tk.Label(top, text="", font=("Arial", 10, "bold"),
+                                   bg="#FFF0F6", fg="#AD1457", anchor="e")
+        self.timer_lbl.pack(side="right")
+
+        # Canvas de fundo + grade de botões sobre ele
+        self.canvas = tk.Canvas(self.win, width=W - 20, height=self.grid_n * cell,
+                                bg="#FFF0F6", highlightthickness=0)
+        self.canvas.pack(padx=10, pady=4)
+
+        if self.bg_img:
+            self.canvas.create_image(0, 0, image=self.bg_img, anchor="nw")
+
+        # Frame de botões posicionado sobre o canvas
+        self.grid_frame = tk.Frame(self.canvas, bg="#FFF0F6")
+        self.canvas.create_window(5, 5, anchor="nw", window=self.grid_frame)
+
+        total_cards = self.grid_n * self.grid_n
+        for i in range(total_cards):
+            btn = tk.Button(
+                self.grid_frame,
+                text="?", width=4 if cell >= 58 else 3, height=2,
+                font=("Arial", 14 if cell >= 58 else 11, "bold"),
+                bg="#FFF0F6", fg="#AD1457",
+                activebackground="#533483",
+                relief="flat", bd=1,
+                command=lambda idx=i: self._flip(idx)
+            )
+            btn.grid(row=i // self.grid_n, column=i % self.grid_n, padx=2, pady=2)
             self.buttons.append(btn)
+            self.card_imgs.append(None)
 
         self._update_info()
+        self._tick()
 
     def _update_info(self):
-        pairs = len(self.matched) // 2
-        self.info.config(text=f"Pares encontrados: {pairs}/8")
+        pairs_found = len(self.matched) // 2
+        total_pairs = len(self.card_ids) // 2
+        self.info_lbl.config(text=f"Pares: {pairs_found}/{total_pairs}")
+        color = "#ffd700" if self.time_left > 15 else "#e53935"
+        self.timer_lbl.config(text=f"⏱ {self.time_left}s", fg=color)
+
+    def _tick(self):
+        if self.finished:
+            return
+        self._update_info()
+        if self.time_left <= 0:
+            self._reward(False)
+            return
+        self.time_left -= 1
+        self.win.after(1000, self._tick)
 
     def _flip(self, idx):
         if self.locked or idx in self.matched or idx in self.flipped:
             return
-        self.buttons[idx].config(text=self.cards_val[idx], state="disabled")
+        fig_idx = self.card_ids[idx]
+        img = self.fig_images[fig_idx]
+        if img:
+            self.buttons[idx].config(image=img, text="")
+            self.buttons[idx].image = img
+        else:
+            self.buttons[idx].config(text=self.fig_fallbacks[fig_idx % len(self.fig_fallbacks)],
+                                      image="")
+        self.buttons[idx].config(state="disabled", bg="#533483")
         self.flipped.append(idx)
 
         if len(self.flipped) == 2:
             self.locked = True
-            self.win.after(700, self._check)
+            self.win.after(750, self._check)
 
     def _check(self):
         a, b = self.flipped
-        if self.cards_val[a] == self.cards_val[b]:
+        if self.card_ids[a] == self.card_ids[b]:
             self.matched.add(a)
             self.matched.add(b)
+            self.buttons[a].config(bg="#1b5e20")
+            self.buttons[b].config(bg="#1b5e20")
             self._update_info()
-            if len(self.matched) == 16:
+            if len(self.matched) >= len(self.card_ids) - (len(self.card_ids) % 2 == 1):
                 self._reward(True)
                 return
         else:
-            self.buttons[a].config(text="?", state="normal")
-            self.buttons[b].config(text="?", state="normal")
+            self.buttons[a].config(text="?", image="", bg="#FFF0F6", state="normal")
+            self.buttons[b].config(text="?", image="", bg="#FFF0F6", state="normal")
+            self.card_imgs[a] = None
+            self.card_imgs[b] = None
         self.flipped.clear()
         self.locked = False
 
@@ -271,46 +458,58 @@ class MemoryGame(BaseGame):
 # 2. DINO RUN
 # ===========================================================================
 class DinoGame(BaseGame):
-    W, H = 480, 280
+    W, H = 520, 300
 
-    def __init__(self, pet, on_finish):
-        super().__init__("🦕 Dino Run", 480, 320, pet, on_finish, "dino")
+    def __init__(self, pet, party, difficulty, cfg, on_finish):
+        super().__init__("🦕 Dino Run", self.W + 120, self.H + 180,
+                         pet, party, difficulty, cfg, on_finish, "dino")
 
-        self.canvas = tk.Canvas(self.win, width=self.W, height=self.H, bg="#e8e8e8")
+        self.survive_time = cfg["survive_time"]
+        self.obs_density  = cfg["obs_density"]
+
+        # Assets
+        self.bg_img  = load_png("assets/minigames/dino_background.png")
+        self.obs_img = load_png("assets/minigames/dino_obstacle.png")
+        # Mantém referências para evitar GC
+        self._obs_img_refs = []
+
+        self.canvas = tk.Canvas(self.win, width=self.W, height=self.H,
+                                bg=DEFAULT_PINK_BG, highlightthickness=0)
         self.canvas.pack()
+        tk.Label(self.win, text="ESPAÇO para pular  |  Sobreviva!",
+                 font=("Arial", 9), bg="#FFF0F6", fg="#AD1457").pack(fill="x")
 
-        tk.Label(self.win, text="ESPAÇO para pular  |  Sobreviva 15 segundos!",
-                 font=("Arial",9)).pack(pady=4)
+        self.win.configure(bg="#FFF0F6")
 
-        # dino
-        self.dino_x = 60
-        self.dino_y = self.H - 50
+        # Fundo
+        if self.bg_img:
+            self.canvas.create_image(0, 0, image=self.bg_img, anchor="nw")
+        else:
+            self.canvas.create_rectangle(0, 0, self.W, self.H, fill=DEFAULT_PINK_BG, outline="")
+
+        # Chão
+        self.canvas.create_line(0, self.H - 30, self.W, self.H - 30, fill="#5d4037", width=3)
+
+        self.dino_x  = 70
+        self.dino_y  = self.H - 50
         self.dino_vy = 0
         self.on_ground = True
 
-        # obstáculos
-        self.obstacles = []
+        self.obstacles = []    # cada obs: {"item": canvas_id, "img_ref": img}
         self.obs_speed = 5
         self.frame_count = 0
-        self.next_obs = 60
+        self.next_obs = int(60 / self.obs_density)
 
         self.start_time = time.time()
-        self.target = 15  # segundos
 
         self.score_text = self.canvas.create_text(
             self.W - 10, 10, anchor="ne",
-            text="0s / 15s", font=("Arial", 11, "bold"), fill="#333"
+            text=f"0s / {self.survive_time}s",
+            font=("Arial", 12, "bold"), fill="#FFF0F6"
         )
 
-        # chão
-        self.canvas.create_line(0, self.H - 30, self.W, self.H - 30, fill="#888", width=2)
-
-        # dino (retângulo verde simples)
-        self.dino = self._draw_player_icon(
-            self.canvas,
-            self.dino_x + 15,
-            self.dino_y - 15,
-            fallback="🦕"
+        self.dino_item = self._draw_player_icon(
+            self.canvas, self.dino_x + 15, self.dino_y - 15, fallback="🦕"
         )
 
         self.win.bind("<space>", self._jump)
@@ -328,63 +527,74 @@ class DinoGame(BaseGame):
 
         elapsed = time.time() - self.start_time
         self.canvas.itemconfig(self.score_text,
-                               text=f"{int(elapsed)}s / {self.target}s")
+                               text=f"{int(elapsed)}s / {self.survive_time}s")
 
-        if elapsed >= self.target:
+        if elapsed >= self.survive_time:
             self._reward(True)
             return
 
-        # gravidade
+        # Física
         self.dino_vy += 1
-        self.dino_y += self.dino_vy
+        self.dino_y  += self.dino_vy
         ground = self.H - 50
         if self.dino_y >= ground:
             self.dino_y = ground
             self.dino_vy = 0
             self.on_ground = True
 
-        self._coords_player_icon(
-            self.canvas,
-            self.dino,
-            self.dino_x + 15,
-            self.dino_y - 15
-        )
+        self._coords_player_icon(self.canvas, self.dino_item,
+                                  self.dino_x + 15, self.dino_y - 15)
 
-        # obstáculos
+        # Spawn de obstáculos
         self.frame_count += 1
         if self.frame_count >= self.next_obs:
-            h = random.randint(20, 50)
-            obs = self.canvas.create_rectangle(
-                self.W, self.H - 30 - h,
-                self.W + 18, self.H - 30,
-                fill="#e53935", outline="#b71c1c"
-            )
-            self.obstacles.append(obs)
+            h = random.randint(22, 52)
+            img = load_png("assets/minigames/dino_obstacle.png")
+            if img:
+                obs_item = self.canvas.create_image(
+                    self.W + 10, self.H - 30 - h // 2,
+                    image=img, anchor="center"
+                )
+                ref = img
+            else:
+                obs_item = self.canvas.create_rectangle(
+                    self.W, self.H - 30 - h, self.W + 20, self.H - 30,
+                    fill="#e53935", outline="#b71c1c"
+                )
+                ref = None
+            self.obstacles.append({"item": obs_item, "img_ref": ref, "h": h})
             self.frame_count = 0
-            self.next_obs = random.randint(45, 100)
-            self.obs_speed = min(10, 5 + int(elapsed / 5))
+            gap_min = max(30, int(45 / self.obs_density))
+            gap_max = max(50, int(90 / self.obs_density))
+            self.next_obs = random.randint(gap_min, gap_max)
+            self.obs_speed = min(12, 5 + int(elapsed / 4))
 
         dead = False
         for obs in list(self.obstacles):
-            coords = self.canvas.coords(obs)
+            self.canvas.move(obs["item"], -self.obs_speed, 0)
+            coords = self.canvas.coords(obs["item"])
             if not coords:
-                continue
-            self.canvas.move(obs, -self.obs_speed, 0)
-            coords = self.canvas.coords(obs)
-            if coords[2] < 0:
-                self.canvas.delete(obs)
                 self.obstacles.remove(obs)
                 continue
-            # colisão simples
-            dx1, dy1, dx2, dy2 = coords
-            if (dx1 < self.dino_x + 28 and dx2 > self.dino_x + 2 and
-                    dy1 < self.dino_y and dy2 > self.dino_y - 28):
+            cx = coords[0] if obs["img_ref"] else coords[2]  # imagem: x centro; rect: x2
+            if (obs["img_ref"] and cx < -20) or (not obs["img_ref"] and coords[2] < 0):
+                self.canvas.delete(obs["item"])
+                self.obstacles.remove(obs)
+                continue
+            # Colisão (bounding box aproximada)
+            ox = coords[0] - 10 if obs["img_ref"] else coords[0]
+            ox2 = coords[0] + 10 if obs["img_ref"] else coords[2]
+            oy = self.H - 30 - obs["h"]
+            if (ox < self.dino_x + 28 and ox2 > self.dino_x + 2 and
+                    oy < self.dino_y and self.H - 30 > self.dino_y - 28):
                 dead = True
 
         if dead:
             self._reward(False)
             return
 
+        self.canvas.tag_raise(self.dino_item)
+        self.canvas.tag_raise(self.score_text)
         self.win.after(30, self._loop)
 
 
@@ -392,92 +602,123 @@ class DinoGame(BaseGame):
 # 3. FLAPPY BIRD
 # ===========================================================================
 class FlappyGame(BaseGame):
-    W, H = 380, 480
-    GAP = 130
-    PIPE_W = 40
-    PIPE_SPEED = 3
+    W, H   = 400, 500
+    GAP    = 130
+    PIPE_W = 44
 
-    def __init__(self, pet, on_finish):
-        super().__init__("🐦 Flappy Bird", 380, 520, pet, on_finish, "flappy")
+    def __init__(self, pet, party, difficulty, cfg, on_finish):
+        super().__init__("🐦 Flappy Bird", self.W + 140, self.H + 180,
+                         pet, party, difficulty, cfg, on_finish, "flappy")
 
-        self.canvas = tk.Canvas(self.win, width=self.W, height=self.H, bg="#87ceeb")
+        self.target_pipes = cfg["target_pipes"]
+        self.pipe_density = cfg["pipe_density"]
+        self.time_limit   = cfg["time_limit"]
+        self.PIPE_SPEED   = int(3 * self.pipe_density)
+
+        self.bg_img   = load_png("assets/minigames/flappy_background.png")
+        self.pipe_img = load_png("assets/minigames/flappy_obstacle.png")
+
+        self.win.configure(bg="#FFF0F6")
+
+        self.canvas = tk.Canvas(self.win, width=self.W, height=self.H,
+                                bg=DEFAULT_PINK_BG, highlightthickness=0)
         self.canvas.pack()
-        tk.Label(self.win, text="ESPAÇO ou clique para bater as asas  |  Passe 10 canos!",
-                 font=("Arial", 9)).pack(pady=4)
 
-        self.bird_x = 80
-        self.bird_y = self.H // 2
+        info_bar = tk.Frame(self.win, bg="#FFF0F6", height=40)
+        info_bar.pack(fill="x")
+        self.time_lbl = tk.Label(info_bar, text="", font=("Arial", 9),
+                                  bg="#FFF0F6", fg="#ffd700")
+        self.time_lbl.pack(side="left", padx=8)
+        tk.Label(info_bar, text="ESPAÇO ou clique para bater asas",
+                 font=("Arial", 9), bg="#FFF0F6", fg="#AD1457").pack(side="right", padx=8)
+
+        if self.bg_img:
+            self.canvas.create_image(0, 0, image=self.bg_img, anchor="nw")
+
+        # Chão
+        self.canvas.create_rectangle(0, self.H - 20, self.W, self.H,
+                                      fill="#8d6e3f", outline="")
+
+        self.bird_x  = 80
+        self.bird_y  = self.H // 2
         self.bird_vy = 0
 
-        self.pipes = []
-        self.score = 0
-        self.target = 10
-        self.frame = 0
+        self.pipes   = []
+        self.score   = 0
+        self.frame   = 0
         self.next_pipe = 80
+        self.time_left = self.time_limit
 
-        # chão
-        self.ground = self.canvas.create_rectangle(
-            0, self.H - 20, self.W, self.H, fill="#8d6e3f", outline=""
-        )
+        self.bird = self._draw_player_icon(self.canvas, self.bird_x, self.bird_y, fallback="🐦")
 
-        # pássaro
-        self.bird = self._draw_player_icon(
-            self.canvas,
-            self.bird_x,
-            self.bird_y,
-            fallback="🐦"
-        )
         self.score_txt = self.canvas.create_text(
             10, 10, anchor="nw",
-            text="0 / 10", font=("Arial", 13, "bold"), fill="white"
+            text=f"0 / {self.target_pipes}", font=("Arial", 14, "bold"), fill="white"
         )
 
         self.win.bind("<space>", self._flap)
         self.canvas.bind("<Button-1>", self._flap)
         self.win.focus_set()
+        self._tick_timer()
         self._loop()
 
     def _flap(self, event=None):
         self.bird_vy = -8
 
+    def _tick_timer(self):
+        if self.finished:
+            return
+        color = "#ffd700" if self.time_left > 15 else "#e53935"
+        self.time_lbl.config(text=f"⏱ {self.time_left}s", fg=color)
+        if self.time_left <= 0:
+            self._reward(False)
+            return
+        self.time_left -= 1
+        self.win.after(1000, self._tick_timer)
+
     def _loop(self):
         if self.finished:
             return
 
-        # física do pássaro
         self.bird_vy += 0.5
-        self.bird_y += self.bird_vy
-        self._coords_player_icon(
-            self.canvas,
-            self.bird,
-            self.bird_x,
-            self.bird_y
-        )
+        self.bird_y  += self.bird_vy
+        self._coords_player_icon(self.canvas, self.bird, self.bird_x, self.bird_y)
 
-        # morreu: chão ou teto
         if self.bird_y >= self.H - 32 or self.bird_y <= 0:
             self._reward(False)
             return
 
-        # gera canos
+        # Spawn de canos
         self.frame += 1
+        gap_base = int(90 / self.pipe_density)
         if self.frame >= self.next_pipe:
-            gap_y = random.randint(80, self.H - 120)
-            top = self.canvas.create_rectangle(
-                self.W, 0,
-                self.W + self.PIPE_W, gap_y,
-                fill="#4caf50", outline="#2e7d32"
-            )
-            bot = self.canvas.create_rectangle(
-                self.W, gap_y + self.GAP,
-                self.W + self.PIPE_W, self.H - 20,
-                fill="#4caf50", outline="#2e7d32"
-            )
-            self.pipes.append({"top": top, "bot": bot, "gap_y": gap_y, "passed": False})
+            gap_y = random.randint(80, self.H - 130)
+            if self.pipe_img:
+                top_item = self.canvas.create_image(
+                    self.W, gap_y // 2, image=self.pipe_img, anchor="center"
+                )
+                bot_item = self.canvas.create_image(
+                    self.W, gap_y + self.GAP + (self.H - gap_y - self.GAP) // 2,
+                    image=self.pipe_img, anchor="center"
+                )
+            else:
+                top_item = self.canvas.create_rectangle(
+                    self.W, 0, self.W + self.PIPE_W, gap_y,
+                    fill="#4caf50", outline="#2e7d32"
+                )
+                bot_item = self.canvas.create_rectangle(
+                    self.W, gap_y + self.GAP, self.W + self.PIPE_W, self.H - 20,
+                    fill="#4caf50", outline="#2e7d32"
+                )
+            self.pipes.append({
+                "top": top_item, "bot": bot_item,
+                "gap_y": gap_y, "passed": False,
+                "has_img": bool(self.pipe_img)
+            })
             self.frame = 0
-            self.next_pipe = random.randint(70, 110)
+            self.next_pipe = random.randint(max(50, gap_base - 20), gap_base + 20)
 
-        # move canos
+        # Move e verifica canos
         for p in list(self.pipes):
             self.canvas.move(p["top"], -self.PIPE_SPEED, 0)
             self.canvas.move(p["bot"], -self.PIPE_SPEED, 0)
@@ -486,24 +727,27 @@ class FlappyGame(BaseGame):
                 self.pipes.remove(p)
                 continue
 
-            pipe_x1, _, pipe_x2, _ = cx
-            # pontuação
+            if p["has_img"]:
+                pipe_x1 = cx[0] - self.PIPE_W // 2
+                pipe_x2 = cx[0] + self.PIPE_W // 2
+            else:
+                pipe_x1, _, pipe_x2, _ = cx
+
             if not p["passed"] and pipe_x2 < self.bird_x - 14:
                 p["passed"] = True
                 self.score += 1
-                self.canvas.itemconfig(self.score_txt, text=f"{self.score} / {self.target}")
-                if self.score >= self.target:
+                self.canvas.itemconfig(self.score_txt,
+                                        text=f"{self.score} / {self.target_pipes}")
+                if self.score >= self.target_pipes:
                     self._reward(True)
                     return
 
-            # colisão
             if pipe_x1 < self.bird_x + 12 and pipe_x2 > self.bird_x - 12:
                 gap_y = p["gap_y"]
                 if self.bird_y - 12 < gap_y or self.bird_y + 12 > gap_y + self.GAP:
                     self._reward(False)
                     return
 
-            # remove fora da tela
             if pipe_x2 < 0:
                 self.canvas.delete(p["top"])
                 self.canvas.delete(p["bot"])
@@ -515,58 +759,112 @@ class FlappyGame(BaseGame):
 
 
 # ===========================================================================
-# 4. CROSSROAD (tipo Frogger)
+# 4. CROSSROAD
 # ===========================================================================
 class CrossroadGame(BaseGame):
-    W, H = 420, 420
     CELL = 42
     COLS = 10
     ROWS = 10
+    W    = CELL * COLS
+    H    = CELL * ROWS
 
-    def __init__(self, pet, on_finish):
-        super().__init__("🚗 Crossroad", 420, 460, pet, on_finish, "crossroad")
+    # Faixas base
+    BASE_LANES = {
+        2: {"dir":  1, "speed": 2.5},
+        3: {"dir": -1, "speed": 3.0},
+        5: {"dir":  1, "speed": 2.0},
+        6: {"dir": -1, "speed": 3.5},
+        8: {"dir":  1, "speed": 2.8},
+    }
+    # Faixas extras (adicionadas conforme dificuldade)
+    EXTRA_LANES = [
+        {4: {"dir":  1, "speed": 2.2}},
+        {7: {"dir": -1, "speed": 3.8}},
+    ]
 
-        self.canvas = tk.Canvas(self.win, width=self.W, height=self.H, bg="#558b2f")
+    def __init__(self, pet, party, difficulty, cfg, on_finish):
+        super().__init__("🚗 Crossroad", self.W + 140, self.H + 180,
+                         pet, party, difficulty, cfg, on_finish, "crossroad")
+
+        self.speed_mult = cfg["speed_mult"]
+        self.time_limit = cfg["time_limit"]
+        self.time_left  = self.time_limit
+
+        # Assets
+        self.bg_img  = load_png("assets/minigames/cross_background.png")
+        self.road_img = load_png("assets/minigames/cross_road.png")
+        self.car_img  = load_png("assets/minigames/cross_obstacle.png")
+
+        self.win.configure(bg="#FFF0F6")
+
+        self.canvas = tk.Canvas(self.win, width=self.W, height=self.H,
+                                bg=DEFAULT_PINK_BG, highlightthickness=0)
         self.canvas.pack()
-        tk.Label(self.win, text="Setas para mover  |  Chegue ao outro lado 3 vezes!",
-                 font=("Arial", 9)).pack(pady=4)
+
+        info_bar = tk.Frame(self.win, bg="#FFF0F6", height=50)
+        info_bar.pack(fill="x")
+        self.info_lbl = tk.Label(info_bar, text="", font=("Arial", 10, "bold"),
+                                  bg="#FFF0F6", fg="#AD1457")
+        self.info_lbl.pack(side="left", padx=8)
+        self.timer_lbl = tk.Label(info_bar, text="", font=("Arial", 10, "bold"),
+                                   bg="#FFF0F6", fg="#ffd700")
+        self.timer_lbl.pack(side="right", padx=8)
+        tk.Label(info_bar, text="Setas para mover  |  Chegue ao outro lado 3×!",
+                 font=("Arial", 9), bg="#FFF0F6", fg="#aaaaaa").pack()
+
+        # Monta faixas com extras
+        self.lanes = {}
+        for row, lane_cfg in self.BASE_LANES.items():
+            self.lanes[row] = {
+                "dir": lane_cfg["dir"],
+                "speed": lane_cfg["speed"] * self.speed_mult,
+                "cars": []
+            }
+        for i in range(min(cfg["extra_lanes"], len(self.EXTRA_LANES))):
+            for row, lane_cfg in self.EXTRA_LANES[i].items():
+                self.lanes[row] = {
+                    "dir": lane_cfg["dir"],
+                    "speed": lane_cfg["speed"] * self.speed_mult,
+                    "cars": []
+                }
 
         self.px = 5
-        self.py = 9  # linha de baixo
-        self.lives = 3
-        self.wins = 0
+        self.py = 9
+        self.lives  = 3
+        self.wins   = 0
         self.target = 3
 
-        # faixas de carro: linha → (direção, velocidade, gap_min)
-        self.lanes = {
-            2: {"dir": 1,  "speed": 2.5, "cars": []},
-            3: {"dir": -1, "speed": 3.0, "cars": []},
-            5: {"dir": 1,  "speed": 2.0, "cars": []},
-            6: {"dir": -1, "speed": 3.5, "cars": []},
-            8: {"dir": 1,  "speed": 2.8, "cars": []},
-        }
         for row, lane in self.lanes.items():
             self._spawn_cars(row, lane)
 
-        self.info_txt = self.canvas.create_text(
-            5, 5, anchor="nw",
-            text="", font=("Arial", 11, "bold"), fill="white"
-        )
         self._draw_all()
+
         self.win.bind("<Up>",    lambda e: self._move(0, -1))
         self.win.bind("<Down>",  lambda e: self._move(0, 1))
         self.win.bind("<Left>",  lambda e: self._move(-1, 0))
         self.win.bind("<Right>", lambda e: self._move(1, 0))
         self.win.focus_set()
+        self._tick_timer()
         self._loop()
+
+    def _tick_timer(self):
+        if self.finished:
+            return
+        color = "#ffd700" if self.time_left > 15 else "#e53935"
+        self.timer_lbl.config(text=f"⏱ {self.time_left}s", fg=color)
+        if self.time_left <= 0:
+            self._reward(False)
+            return
+        self.time_left -= 1
+        self.win.after(1000, self._tick_timer)
 
     def _spawn_cars(self, row, lane):
         lane["cars"].clear()
-        x = 0 if lane["dir"] == 1 else self.W
-        while x < self.W if lane["dir"] == 1 else x > 0:
-            gap = random.randint(80, 160)
+        x = 0.0 if lane["dir"] == 1 else float(self.W)
+        while True:
+            gap = random.randint(70, 150)
             x += gap * lane["dir"]
-            lane["cars"].append(float(x))
+            lane["cars"].append(x)
             if lane["dir"] == 1 and x > self.W + 200:
                 break
             if lane["dir"] == -1 and x < -200:
@@ -575,47 +873,42 @@ class CrossroadGame(BaseGame):
     def _draw_all(self):
         self.canvas.delete("all")
 
-        # fundo
-        for r in range(self.ROWS):
-            color = "#37474f" if r in self.lanes else "#558b2f"
-            self.canvas.create_rectangle(
-                0, r * self.CELL, self.W, (r + 1) * self.CELL,
-                fill=color, outline=""
-            )
+        if self.bg_img:
+            self.canvas.create_image(0, 0, image=self.bg_img, anchor="nw")
+        else:
+            for r in range(self.ROWS):
+                color = "#37474f" if r in self.lanes else DEFAULT_PINK_BG
+                self.canvas.create_rectangle(
+                    0, r * self.CELL, self.W, (r + 1) * self.CELL,
+                    fill=color, outline=""
+                )
+            for r in [0, 9]:
+                self.canvas.create_rectangle(
+                    0, r * self.CELL, self.W, (r + 1) * self.CELL,
+                    fill="#8d6e3f", outline=""
+                )
 
-        # calçadas (linha 0 e 9)
-        for r in [0, 9]:
-            self.canvas.create_rectangle(
-                0, r * self.CELL, self.W, (r + 1) * self.CELL,
-                fill="#8d6e3f", outline=""
-            )
-
-        # carros
         for row, lane in self.lanes.items():
             for cx in lane["cars"]:
-                x1 = cx
-                x2 = cx + 36 * lane["dir"]
-                rx1, rx2 = (min(x1, x2), max(x1, x2))
+                rx1 = min(cx, cx + 36 * lane["dir"])
+                rx2 = max(cx, cx + 36 * lane["dir"])
                 ry1 = row * self.CELL + 5
                 ry2 = (row + 1) * self.CELL - 5
-                self.canvas.create_rectangle(rx1, ry1, rx2, ry2,
-                                             fill="#e53935", outline="#b71c1c")
+                if self.car_img:
+                    self.canvas.create_image(
+                        (rx1 + rx2) / 2, (ry1 + ry2) / 2,
+                        image=self.car_img, anchor="center"
+                    )
+                else:
+                    self.canvas.create_rectangle(rx1, ry1, rx2, ry2,
+                                                  fill="#e53935", outline="#b71c1c")
 
-        # jogador
         player_x = self.px * self.CELL + self.CELL // 2
         player_y = self.py * self.CELL + self.CELL // 2
+        self._draw_player_icon(self.canvas, player_x, player_y, fallback="🐾")
 
-        self._draw_player_icon(
-            self.canvas,
-            player_x,
-            player_y,
-            fallback="🐾"
-        )
-
-        self.info_txt = self.canvas.create_text(
-            5, 2, anchor="nw",
-            text=f"Chegadas: {self.wins}/{self.target}  Vidas: {'❤️' * self.lives}",
-            font=("Arial", 10, "bold"), fill="white"
+        self.info_lbl.config(
+            text=f"Chegadas: {self.wins}/{self.target}  Vidas: {'❤️' * self.lives}"
         )
 
     def _move(self, dx, dy):
@@ -623,7 +916,6 @@ class CrossroadGame(BaseGame):
         ny = max(0, min(self.ROWS - 1, self.py + dy))
         self.px, self.py = nx, ny
         self._draw_all()
-
         if self.py == 0:
             self.wins += 1
             if self.wins >= self.target:
@@ -639,13 +931,11 @@ class CrossroadGame(BaseGame):
         for row, lane in self.lanes.items():
             for i in range(len(lane["cars"])):
                 lane["cars"][i] += lane["speed"] * lane["dir"]
-                # reposiciona ao sair da tela
                 if lane["dir"] == 1 and lane["cars"][i] > self.W + 50:
                     lane["cars"][i] = -50.0
                 elif lane["dir"] == -1 and lane["cars"][i] < -86:
                     lane["cars"][i] = float(self.W + 50)
 
-        # colisão
         if self.py in self.lanes:
             lane = self.lanes[self.py]
             px_center = self.px * self.CELL + 21
@@ -668,22 +958,40 @@ class CrossroadGame(BaseGame):
 # 5. LABIRINTO
 # ===========================================================================
 class MazeGame(BaseGame):
-    CELL = 40
-    COLS = 10
-    ROWS = 10
 
-    def __init__(self, pet, on_finish):
+    def __init__(self, pet, party, difficulty, cfg, on_finish):
+        self.COLS = cfg["size"]
+        self.ROWS = cfg["size"]
+        self.time_limit = cfg["time_limit"]
+
+        # Tamanho de célula adaptativo para caber na tela
+        max_px = 480
+        self.CELL = max(20, max_px // self.COLS)
         W = self.CELL * self.COLS
         H = self.CELL * self.ROWS
-        super().__init__("🌀 Labirinto", W, H + 40, pet, on_finish, "maze")
 
-        self.canvas = tk.Canvas(self.win, width=W, height=H, bg="#1a1a2e")
+        super().__init__("🌀 Labirinto", W, H + 50,
+                         pet, party, difficulty, cfg, on_finish, "maze")
+
+        self.win.configure(bg="#FFF0F6")
+
+        self.bg_img = load_png("assets/minigames/maze_background.png")
+
+        self.canvas = tk.Canvas(self.win, width=W, height=H,
+                                bg=DEFAULT_PINK_BG, highlightthickness=0)
         self.canvas.pack()
-        tk.Label(self.win, text="Setas para mover  |  Chegue ao 🏁!",
-                 font=("Arial", 9)).pack(pady=4)
 
-        self.maze = self._generate_maze()
+        info_bar = tk.Frame(self.win, bg="#FFF0F6", height=50)
+        info_bar.pack(fill="x")
+        tk.Label(info_bar, text="Setas para mover  |  Chegue ao 🏁",
+                 font=("Arial", 9), bg="#FFF0F6", fg="#aaaaaa").pack(side="left", padx=8)
+        self.timer_lbl = tk.Label(info_bar, text="", font=("Arial", 10, "bold"),
+                                   bg="#FFF0F6", fg="#AD1457")
+        self.timer_lbl.pack(side="right", padx=8)
+
+        self.time_left = self.time_limit
         self.px, self.py = 0, 0
+        self.maze = self._generate_maze()
 
         self._draw_maze()
 
@@ -692,12 +1000,24 @@ class MazeGame(BaseGame):
         self.win.bind("<Left>",  lambda e: self._move(-1, 0))
         self.win.bind("<Right>", lambda e: self._move(1, 0))
         self.win.focus_set()
+        self._tick()
+
+    def _tick(self):
+        if self.finished:
+            return
+        color = "#ffd700" if self.time_left > 15 else "#e53935"
+        self.timer_lbl.config(text=f"⏱ {self.time_left}s", fg=color)
+        if self.time_left <= 0:
+            self._reward(False)
+            return
+        self.time_left -= 1
+        self.win.after(1000, self._tick)
 
     def _generate_maze(self):
-        """Gera labirinto com DFS recursivo. maze[y][x] = set de direções abertas."""
         cols, rows = self.COLS, self.ROWS
         visited = [[False] * cols for _ in range(rows)]
-        walls = {(y, x): {"N", "S", "E", "W"} for y in range(rows) for x in range(cols)}
+        walls = {(y, x): {"N", "S", "E", "W"}
+                 for y in range(rows) for x in range(cols)}
 
         def dfs(y, x):
             visited[y][x] = True
@@ -706,18 +1026,23 @@ class MazeGame(BaseGame):
             for d, dy, dx in dirs:
                 ny, nx = y + dy, x + dx
                 if 0 <= ny < rows and 0 <= nx < cols and not visited[ny][nx]:
-                    # remove parede entre (y,x) e (ny,nx)
                     walls[(y, x)].discard(d)
                     opp = {"N": "S", "S": "N", "E": "W", "W": "E"}[d]
                     walls[(ny, nx)].discard(opp)
                     dfs(ny, nx)
 
+        sys_limit = sys.getrecursionlimit()
+        sys.setrecursionlimit(max(sys_limit, cols * rows * 4))
         dfs(0, 0)
+        sys.setrecursionlimit(sys_limit)
         return walls
 
     def _draw_maze(self):
         self.canvas.delete("all")
         C = self.CELL
+
+        if self.bg_img:
+            self.canvas.create_image(0, 0, image=self.bg_img, anchor="nw")
 
         for y in range(self.ROWS):
             for x in range(self.COLS):
@@ -725,13 +1050,10 @@ class MazeGame(BaseGame):
                 x2, y2 = x1 + C, y1 + C
                 walls = self.maze[(y, x)]
 
-                # fundo da célula
-                color = "#16213e"
-                if (x, y) == (self.COLS - 1, self.ROWS - 1):
-                    color = "#1b5e20"  # meta
+                color = "#1b5e20" if (x, y) == (self.COLS - 1, self.ROWS - 1) else "#FFF0F6"
                 self.canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline="")
 
-                lw = 2
+                lw = max(1, C // 16)
                 lc = "#7e57c2"
                 if "N" in walls:
                     self.canvas.create_line(x1, y1, x2, y1, fill=lc, width=lw)
@@ -742,21 +1064,16 @@ class MazeGame(BaseGame):
                 if "E" in walls:
                     self.canvas.create_line(x2, y1, x2, y2, fill=lc, width=lw)
 
-        # meta
+        # Meta
         gx = (self.COLS - 1) * C + C // 2
         gy = (self.ROWS - 1) * C + C // 2
-        self.canvas.create_text(gx, gy, text="🏁", font=("Arial", 18))
+        fsize = max(10, C - 8)
+        self.canvas.create_text(gx, gy, text="🏁", font=("Arial", fsize))
 
-        # jogador
-        player_x = self.px * C + C // 2
-        player_y = self.py * C + C // 2
-
-        self._draw_player_icon(
-            self.canvas,
-            player_x,
-            player_y,
-            fallback="🐾"
-        )
+        # Jogador
+        px = self.px * C + C // 2
+        py = self.py * C + C // 2
+        self._draw_player_icon(self.canvas, px, py, fallback="🐾")
 
     def _move(self, dx, dy):
         dirs_map = {(0, -1): "N", (0, 1): "S", (1, 0): "E", (-1, 0): "W"}

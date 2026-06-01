@@ -68,15 +68,10 @@ SCENARIOS = {
 
 
 def resource_path(relative_path):
-    """
-    Ajuda o app a encontrar imagens tanto rodando pelo Python
-    quanto depois de empacotado com PyInstaller.
-    """
     try:
         base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.abspath(".")
-
     return os.path.join(base_path, relative_path)
 
 
@@ -98,11 +93,9 @@ class TamagotchiApp:
         self.background_image = None
         self.background_canvas_item = None
 
-        # Estado de animação por pet (índice → dict)
         self.pet_states = {}
         self._init_pet_states()
 
-        # Imagens por pet (mantidas para evitar garbage collection)
         self.pet_images = {}
 
         self.status_bars = {}
@@ -114,9 +107,7 @@ class TamagotchiApp:
         self.animate_pet()
 
     def _init_pet_states(self):
-        """Inicializa posição/velocidade independente para cada pet."""
         n = len(self.party.pets)
-        # Distribui os pets horizontalmente para não sobrepor no início
         section_w = GAME_AREA_WIDTH // max(n, 1)
         for i, pet in enumerate(self.party.pets):
             start_x = section_w * i + section_w // 2
@@ -145,19 +136,23 @@ class TamagotchiApp:
             background="#4caf50",
             thickness=18
         )
-
         self.style.configure(
             "yellow.Horizontal.TProgressbar",
             troughcolor="#dddddd",
             background="#ffc107",
             thickness=18
         )
-
         self.style.configure(
             "red.Horizontal.TProgressbar",
             troughcolor="#dddddd",
             background="#f44336",
             thickness=18
+        )
+        self.style.configure(
+            "blue.Horizontal.TProgressbar",
+            troughcolor="#dddddd",
+            background="#2196f3",
+            thickness=12
         )
 
     def create_widgets(self):
@@ -212,6 +207,51 @@ class TamagotchiApp:
         self.create_pets_tab()
 
     def create_status_tab(self):
+        # Nível global do jogador
+        self.level_frame = tk.Frame(self.status_tab, bg=UI_BG)
+        self.level_frame.pack(fill="x", padx=8, pady=(8, 2))
+
+        self.level_label = tk.Label(
+            self.level_frame,
+            text="",
+            font=("Arial", 11, "bold"),
+            bg=UI_BG,
+            anchor="w"
+        )
+        self.level_label.pack(side="left")
+
+        self.money_label = tk.Label(
+            self.level_frame,
+            text="",
+            font=("Arial", 11),
+            bg=UI_BG,
+            anchor="e"
+        )
+        self.money_label.pack(side="right")
+
+        # Barra de XP
+        self.xp_bar = ttk.Progressbar(
+            self.status_tab,
+            orient="horizontal",
+            length=280,
+            mode="determinate",
+            maximum=100,
+            style="blue.Horizontal.TProgressbar"
+        )
+        self.xp_bar.pack(fill="x", padx=8, pady=(0, 4))
+
+        self.xp_label = tk.Label(
+            self.status_tab,
+            text="",
+            font=("Arial", 8),
+            bg=UI_BG,
+            fg="#555555"
+        )
+        self.xp_label.pack()
+
+        tk.Frame(self.status_tab, height=1, bg=UI_BORDER).pack(fill="x", padx=8, pady=4)
+
+        # Pet atual
         self.pet_label = tk.Label(
             self.status_tab,
             text="",
@@ -219,7 +259,7 @@ class TamagotchiApp:
             bg=UI_BG,
             wraplength=300
         )
-        self.pet_label.pack(pady=8)
+        self.pet_label.pack(pady=(4, 2))
 
         self.info_label = tk.Label(
             self.status_tab,
@@ -228,10 +268,10 @@ class TamagotchiApp:
             bg=UI_BG,
             justify="center"
         )
-        self.info_label.pack(pady=5)
+        self.info_label.pack(pady=3)
 
         self.status_frame = tk.Frame(self.status_tab, bg=UI_BG)
-        self.status_frame.pack(fill="x", pady=10, padx=8)
+        self.status_frame.pack(fill="x", pady=6, padx=8)
 
         self.create_status_bar("Fome", "hunger")
         self.create_status_bar("Felicidade", "happiness")
@@ -258,13 +298,13 @@ class TamagotchiApp:
         actions_description.pack(pady=4)
 
         buttons = [
-            ("🍗 Alimentar", self.feed_pet),
-            ("💤 Dormir", self.sleep_pet),
-            ("🛁 Banho", self.bath_pet),
-            ("🎮 Minijogos", self.open_minigames),
-            ("🛒 Loja", self.open_shop),
-            ("🎒 Inventário", self.open_inventory),
-            ("💾 Salvar", self.save_game),
+            ("🍗 Alimentar",    self.feed_pet),
+            ("💤 Dormir",       self.sleep_pet),
+            ("🛁 Banho",        self.bath_pet),
+            ("🎮 Minijogos",    self.open_minigames),
+            ("🛒 Loja",         self.open_shop),
+            ("🎒 Inventário",   self.open_inventory),
+            ("💾 Salvar",       self.save_game),
         ]
 
         for text, command in buttons:
@@ -296,9 +336,9 @@ class TamagotchiApp:
         scenario_description.pack(pady=4)
 
         scenario_buttons = [
-            ("🏠 Casa", "Casa"),
-            ("🏊 Piscina", "Piscina"),
-            ("🦁 Zoo", "Zoo"),
+            ("🏠 Casa",          "Casa"),
+            ("🏊 Piscina",       "Piscina"),
+            ("🦁 Zoo",           "Zoo"),
             ("🎤 Palco de Show", "Palco de Show"),
         ]
 
@@ -311,6 +351,7 @@ class TamagotchiApp:
                 command=lambda selected=scenario: self.change_scenario(selected)
             )
             button.pack(pady=7)
+
     def create_status_bar(self, label_text, key):
         frame = tk.Frame(self.status_frame, bg=UI_BG)
         frame.pack(fill="x", pady=5)
@@ -354,23 +395,23 @@ class TamagotchiApp:
 
     def load_image(self, relative_path):
         path = resource_path(relative_path)
-
         if not os.path.exists(path):
             return None
-
         try:
             return tk.PhotoImage(file=path)
         except tk.TclError:
             return None
 
     def load_scene_assets(self):
-        # Cenário do pet atualmente selecionado define o fundo
         scenario_data = SCENARIOS.get(self.pet.scenario, SCENARIOS["Casa"])
         self.background_image = self.load_image(scenario_data["background"])
 
-        # Carrega imagem para CADA pet
         self.pet_images = {}
         for i, pet in enumerate(self.party.pets):
+            if not self.party.is_unlocked(i):
+                self.pet_images[i] = None
+                continue
+
             sc_data = SCENARIOS.get(pet.scenario, SCENARIOS["Casa"])
             scenario_key = sc_data["key"]
             pet_key = pet.asset_key
@@ -420,12 +461,30 @@ class TamagotchiApp:
 
         selected_index = self.party.current_pet_index
 
-        for i, pet in enumerate(self.party.pets):
+        # --- Ordenação por Y para simular profundidade 2D ---
+        # Pets com Y menor (mais ao fundo) são desenhados primeiro
+        draw_order = sorted(
+            range(len(self.party.pets)),
+            key=lambda i: self.pet_states[i]["y"]
+        )
+
+        for i in draw_order:
+            pet = self.party.pets[i]
             state = self.pet_states[i]
             px, py = state["x"], state["y"]
             is_selected = (i == selected_index)
+            unlocked = self.party.is_unlocked(i)
 
-            # Destaque dourado (animado) — criado antes da sombra preta
+            if not unlocked:
+                # Pet bloqueado: não aparece no cenário
+                state["canvas_highlight"] = None
+                state["canvas_shadow"] = None
+                state["canvas_pet"] = None
+                state["canvas_name_outline"] = []
+                state["canvas_name"] = None
+                continue
+
+            # Destaque rosa para o pet selecionado
             if is_selected:
                 state["canvas_highlight"] = self.canvas.create_oval(
                     px - 44, py + 52, px + 44, py + 68,
@@ -436,7 +495,6 @@ class TamagotchiApp:
             else:
                 state["canvas_highlight"] = None
 
-            # Sombra preta mais baixa, próxima dos pés
             state["canvas_shadow"] = self.canvas.create_oval(
                 px - 35, py + 56, px + 35, py + 68,
                 fill="#000000",
@@ -444,7 +502,6 @@ class TamagotchiApp:
                 stipple="gray50"
             )
 
-            # Imagem ou emoji do pet
             img = self.pet_images.get(i)
             if img:
                 state["canvas_pet"] = self.canvas.create_image(
@@ -458,19 +515,16 @@ class TamagotchiApp:
                     anchor="center"
                 )
 
-            # Nome do pet com contorno preto para melhor legibilidade
             name_color = SELECTED_PINK if is_selected else CANVAS_NAME_NORMAL
             name_y = py - 65
 
             state["canvas_name_outline"] = []
-
             for ox, oy in [
                 (-1, 0), (1, 0), (0, -1), (0, 1),
                 (-1, -1), (1, -1), (-1, 1), (1, 1)
             ]:
                 outline_item = self.canvas.create_text(
-                    px + ox,
-                    name_y + oy,
+                    px + ox, name_y + oy,
                     text=pet.name,
                     font=("Arial", 13, "bold"),
                     fill=CANVAS_NAME_OUTLINE
@@ -478,8 +532,7 @@ class TamagotchiApp:
                 state["canvas_name_outline"].append(outline_item)
 
             state["canvas_name"] = self.canvas.create_text(
-                px,
-                name_y,
+                px, name_y,
                 text=pet.name,
                 font=("Arial", 13, "bold"),
                 fill=name_color
@@ -499,10 +552,8 @@ class TamagotchiApp:
     def get_fallback_pet_visual(self):
         if self.pet.collapsed:
             return "😵"
-
         if self.pet.sick:
             return "🤒"
-
         fallback_by_pet = {
             "felix": "🐱",
             "bangchan": "🐺",
@@ -513,12 +564,39 @@ class TamagotchiApp:
             "in": "🦊",
             "seungmin": "🐶",
         }
-
         return fallback_by_pet.get(self.pet.asset_key, "🐣")
 
+    def get_fallback_pet_visual_for(self, pet):
+        if pet.collapsed:
+            return "😵"
+        if pet.sick:
+            return "🤒"
+        fallback_by_pet = {
+            "felix": "🐱",
+            "bangchan": "🐺",
+            "hyunjin": "🦙",
+            "han": "🐿️",
+            "changbin": "🐷",
+            "leeknow": "🐰",
+            "in": "🦊",
+            "seungmin": "🐶",
+        }
+        return fallback_by_pet.get(pet.asset_key, "🐣")
+
     def animate_pet(self):
-        for i, pet in enumerate(self.party.pets):
+        # Recalcula ordem de Y para reordenar itens no canvas (z-order)
+        draw_order = sorted(
+            range(len(self.party.pets)),
+            key=lambda i: self.pet_states[i]["y"]
+        )
+
+        for i in draw_order:
+            pet = self.party.pets[i]
             state = self.pet_states[i]
+            unlocked = self.party.is_unlocked(i)
+
+            if not unlocked:
+                continue
 
             if not pet.collapsed:
                 state["walk_phase"] += 0.25
@@ -560,14 +638,12 @@ class TamagotchiApp:
                     px - 44, state["y"] + 52,
                     px + 44, state["y"] + 68
                 )
-
             if state["canvas_shadow"]:
                 self.canvas.coords(
                     state["canvas_shadow"],
                     px - 35, state["y"] + 56,
                     px + 35, state["y"] + 68
                 )
-
             if state["canvas_pet"]:
                 self.canvas.coords(state["canvas_pet"], px, display_y)
 
@@ -577,59 +653,55 @@ class TamagotchiApp:
                     (-1, 0), (1, 0), (0, -1), (0, 1),
                     (-1, -1), (1, -1), (-1, 1), (1, 1)
                 ]
-
                 for item, (ox, oy) in zip(state["canvas_name_outline"], offsets):
                     self.canvas.coords(item, px + ox, name_y + oy)
 
             if state["canvas_name"]:
                 self.canvas.coords(state["canvas_name"], px, display_y - 68)
 
-        self.root.after(35, self.animate_pet)
+            # Reordena z-order: pets com Y maior ficam na frente
+            for item_key in ("canvas_highlight", "canvas_shadow", "canvas_pet",
+                             "canvas_name_outline", "canvas_name"):
+                items = state.get(item_key)
+                if isinstance(items, list):
+                    for it in items:
+                        self.canvas.tag_raise(it)
+                elif items:
+                    self.canvas.tag_raise(items)
 
-    def get_fallback_pet_visual_for(self, pet):
-        if pet.collapsed:
-            return "😵"
-        if pet.sick:
-            return "🤒"
-        fallback_by_pet = {
-            "felix": "🐱",
-            "bangchan": "🐺",
-            "hyunjin": "🦙",
-            "han": "🐿️",
-            "changbin": "🐷",
-            "leeknow": "🐰",
-            "in": "🦊",
-            "seungmin": "🐶",
-        }
-        return fallback_by_pet.get(pet.asset_key, "🐣")
+        self.root.after(35, self.animate_pet)
 
     def get_progress_style(self, value):
         if value >= 60:
             return "green.Horizontal.TProgressbar"
-
         if value >= 30:
             return "yellow.Horizontal.TProgressbar"
-
         return "red.Horizontal.TProgressbar"
 
     def update_status_bar(self, key, value):
         bar_data = self.status_bars[key]
         progress = bar_data["progress"]
         value_label = bar_data["value_label"]
-
         progress["value"] = value
         progress.configure(style=self.get_progress_style(value))
         value_label.config(text=f"{value}/100")
 
     def update_screen(self):
-        self.pet_label.config(
-            text=f"{self.pet.name} - {self.pet.get_stage()} - {self.pet.get_mood()}"
-        )
+        # Nível global
+        xp_cur, xp_next = self.party.xp_progress()
+        xp_pct = int((xp_cur / xp_next) * 100) if xp_next else 0
+        self.level_label.config(text=f"⭐ Nível {self.party.level}")
+        self.money_label.config(text=f"💰 {self.party.money}")
+        self.xp_bar["value"] = xp_pct
+        self.xp_label.config(text=f"XP: {xp_cur} / {xp_next}")
 
+        # Pet selecionado
+        self.pet_label.config(
+            text=f"{self.pet.name} — {self.pet.get_mood()}"
+        )
         self.info_label.config(
             text=(
                 f"Idade: {self.pet.age} turnos\n"
-                f"Moedas: {self.pet.money}\n"
                 f"Doente: {'Sim' if self.pet.sick else 'Não'}\n"
                 f"Estado: {'Desmaiado' if self.pet.collapsed else 'Ativo'}"
             )
@@ -641,38 +713,64 @@ class TamagotchiApp:
         self.update_status_bar("hygiene", self.pet.hygiene)
         self.update_status_bar("health", self.pet.health)
 
-    def refresh_after_action(self):
+    def refresh_after_action(self, gain_xp=10):
+        """Atualiza tela. gain_xp = XP ganho pela ação (0 = sem XP extra)."""
+        leveled_up = False
+        if gain_xp:
+            leveled_up = self.party.add_xp(gain_xp)
         self.pet.update_condition()
         self.load_scene_assets()
         self.update_screen()
+        self.update_pet_buttons()
+        if leveled_up:
+            self._on_level_up()
+
+    def _on_level_up(self):
+        next_info = self.party.next_unlock()
+        msg = f"Você chegou ao Nível {self.party.level}! 🎉"
+        for i, _ in enumerate(self.party.pets):
+            if self.party.unlock_level_for(i) == self.party.level:
+                msg += f"\n\n{self.party.pets[i].name} foi desbloqueado!"
+        if next_info:
+            name, lvl = next_info
+            msg += f"\n\nPróximo: {name} no Nível {lvl}."
+        messagebox.showinfo("Nível Up!", msg)
 
     def feed_pet(self):
         message = self.pet.feed()
         messagebox.showinfo("Ação", message)
-        self.refresh_after_action()
+        self.refresh_after_action(gain_xp=8)
 
     def sleep_pet(self):
         message = self.pet.sleep()
         messagebox.showinfo("Ação", message)
-        self.refresh_after_action()
+        self.refresh_after_action(gain_xp=5)
 
     def bath_pet(self):
         message = self.pet.bath()
         messagebox.showinfo("Ação", message)
-        self.refresh_after_action()
+        self.refresh_after_action(gain_xp=5)
 
     def open_minigames(self):
         if self.pet.energy < 10:
             messagebox.showwarning("Minijogos", f"{self.pet.name} está cansado demais para jogar!")
             return
-        open_minigame_selector(self.root, self.pet, self._on_minigame_finish)
+        open_minigame_selector(self.root, self.pet, self.party, self._on_minigame_finish)
 
-    def _on_minigame_finish(self, coins, result, happiness=0):
-        self.refresh_after_action()
+    def _on_minigame_finish(self, coins, result, happiness=0, xp=0):
+        leveled_up = False
+        if xp:
+            leveled_up = self.party.add_xp(xp)
+        self.pet.update_condition()
+        self.load_scene_assets()
+        self.update_screen()
+        self.update_pet_buttons()
         messagebox.showinfo(
             "Minijogo",
-            f"{result}\n+{coins} moedas para {self.pet.name}!\n+{happiness} felicidade"
+            f"{result}\n+{coins} moedas!\n+{happiness} felicidade\n+{xp} XP"
         )
+        if leveled_up:
+            self._on_level_up()
 
     def change_scenario(self, scenario):
         self.pet.change_scenario(scenario)
@@ -687,14 +785,13 @@ class TamagotchiApp:
 
         label = tk.Label(
             shop_window,
-            text=f"Loja - Moedas: {self.pet.money}",
+            text=f"Loja — Moedas: {self.party.money}",
             font=("Arial", 15, "bold")
         )
         label.pack(pady=10)
 
         for index, item in enumerate(self.shop.list_items()):
             text = f"{item.name} - {item.price} moedas\n{item.description}"
-
             button = tk.Button(
                 shop_window,
                 text=text,
@@ -705,15 +802,19 @@ class TamagotchiApp:
             button.pack(pady=4)
 
     def buy_item(self, item_index, window):
-        success, message = self.shop.buy_item(self.pet, item_index)
+        item = self.shop.list_items()[item_index]
 
-        if success:
-            messagebox.showinfo("Compra", message)
-        else:
-            messagebox.showwarning("Compra", message)
+        if self.party.money < item.price:
+            messagebox.showwarning("Compra", "Moedas insuficientes.")
+            window.destroy()
+            return
 
+        self.party.money -= item.price
+        self.pet.inventory.append(item.name)
+
+        messagebox.showinfo("Compra", f"{self.pet.name} comprou {item.name}.")
         window.destroy()
-        self.refresh_after_action()
+        self.refresh_after_action(gain_xp=0)
 
     def open_inventory(self):
         inventory_window = tk.Toplevel(self.root)
@@ -760,15 +861,23 @@ class TamagotchiApp:
             self.pet.inventory.remove(item_name)
 
         messagebox.showinfo("Inventário", message)
-
         window.destroy()
-        self.refresh_after_action()
+        self.refresh_after_action(gain_xp=3)
 
     def save_game(self):
         SaveManager.save_game(self.party)
         messagebox.showinfo("Salvar", "Jogo salvo com sucesso.")
 
     def select_pet(self, index):
+        if not self.party.is_unlocked(index):
+            unlock_lvl = self.party.unlock_level_for(index)
+            messagebox.showinfo(
+                "Pet bloqueado",
+                f"{self.party.pets[index].name} será desbloqueado no Nível {unlock_lvl}.\n"
+                f"Seu nível atual: {self.party.level}."
+            )
+            return
+
         self.party.select_pet(index)
         self.pet = self.party.get_current_pet()
 
@@ -800,9 +909,15 @@ class TamagotchiApp:
         grid.pack(pady=5)
 
         for index, pet in enumerate(self.party.pets):
+            unlock_lvl = self.party.unlock_level_for(index)
+            if self.party.is_unlocked(index):
+                label = pet.name
+            else:
+                label = f"🔒 Nv.{unlock_lvl}"
+
             btn = tk.Button(
                 grid,
-                text=pet.name,
+                text=label,
                 width=13,
                 height=2,
                 font=("Arial", 10),
@@ -817,7 +932,16 @@ class TamagotchiApp:
         selected = self.party.current_pet_index
 
         for i, btn in enumerate(self.pet_buttons):
-            if i == selected:
+            unlocked = self.party.is_unlocked(i)
+            unlock_lvl = self.party.unlock_level_for(i)
+
+            # Atualiza texto do botão (pode ter desbloqueado agora)
+            if unlocked:
+                btn.config(text=self.party.pets[i].name)
+            else:
+                btn.config(text=f"🔒 Nv.{unlock_lvl}")
+
+            if i == selected and unlocked:
                 btn.config(
                     bg=SELECTED_PINK,
                     activebackground=SELECTED_PINK,
@@ -825,7 +949,7 @@ class TamagotchiApp:
                     relief="sunken",
                     font=("Arial", 10, "bold")
                 )
-            else:
+            elif unlocked:
                 btn.config(
                     bg=UI_BG,
                     activebackground=UI_BORDER,
@@ -833,24 +957,11 @@ class TamagotchiApp:
                     relief="raised",
                     font=("Arial", 10)
                 )
-
-    def create_pet_selector(self, parent):
-        selector_title = tk.Label(
-            parent,
-            text="Ver Status do Pet",
-            font=("Arial", 15, "bold"),
-            bg=UI_BG
-        )
-        selector_title.pack(pady=3)
-
-        selector_grid = tk.Frame(parent, bg=UI_BG)
-        selector_grid.pack()
-
-        for index, pet in enumerate(self.party.pets):
-            button = tk.Button(
-                selector_grid,
-                text=pet.name,
-                width=14,
-                command=lambda i=index: self.select_pet(i)
-            )
-            button.grid(row=index // 2, column=index % 2, padx=4, pady=3)
+            else:
+                btn.config(
+                    bg="#dddddd",
+                    activebackground="#cccccc",
+                    fg="#888888",
+                    relief="flat",
+                    font=("Arial", 10)
+                )
