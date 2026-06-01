@@ -3,8 +3,7 @@ import sys
 import math
 import random
 import tkinter as tk
-from tkinter import messagebox, simpledialog, ttk
-from app.core.minigames import open_minigame_selector
+from tkinter import messagebox, ttk
 
 from app.core.pet_party import PetParty
 from app.core.shop import Shop
@@ -21,6 +20,12 @@ GAME_AREA_HEIGHT = 460
 PET_AREA_MARGIN = 55
 PET_SIZE_FALLBACK = 70
 
+UI_BG = "#FFF0F6"
+UI_BORDER = "#F7BBD5"
+SELECTED_PINK = "#FF4FA3"
+
+CANVAS_NAME_OUTLINE = "#000000"
+CANVAS_NAME_NORMAL = "#FFFFFF"
 
 SCENARIOS = {
     "Casa": {
@@ -127,6 +132,7 @@ class TamagotchiApp:
                 "canvas_shadow": None,
                 "canvas_highlight": None,
                 "canvas_name": None,
+                "canvas_name_outline": [],
             }
 
     def setup_styles(self):
@@ -155,13 +161,13 @@ class TamagotchiApp:
         )
 
     def create_widgets(self):
-        self.main_frame = tk.Frame(self.root, bg="#202020")
+        self.main_frame = tk.Frame(self.root, bg=UI_BG)
         self.main_frame.pack(fill="both", expand=True)
 
-        self.game_frame = tk.Frame(self.main_frame, bg="#202020", padx=15, pady=15)
+        self.game_frame = tk.Frame(self.main_frame, bg=UI_BG, padx=15, pady=15)
         self.game_frame.pack(side="left", fill="both")
 
-        self.side_frame = tk.Frame(self.main_frame, width=350, bg="#f2f2f2", padx=18, pady=15)
+        self.side_frame = tk.Frame(self.main_frame, width=350, bg=UI_BG, padx=18, pady=15)
         self.side_frame.pack(side="right", fill="y")
         self.side_frame.pack_propagate(False)
 
@@ -183,17 +189,17 @@ class TamagotchiApp:
             self.side_frame,
             text="Mini Tamagotchi",
             font=("Arial", 20, "bold"),
-            bg="#f2f2f2"
+            bg=UI_BG
         )
         self.title_label.pack(pady=5)
 
         self.tabs = ttk.Notebook(self.side_frame)
         self.tabs.pack(fill="both", expand=True, pady=5)
 
-        self.status_tab = tk.Frame(self.tabs, bg="#f2f2f2")
-        self.actions_tab = tk.Frame(self.tabs, bg="#f2f2f2")
-        self.scenario_tab = tk.Frame(self.tabs, bg="#f2f2f2")
-        self.pets_tab = tk.Frame(self.tabs, bg="#f2f2f2")
+        self.status_tab = tk.Frame(self.tabs, bg=UI_BG)
+        self.actions_tab = tk.Frame(self.tabs, bg=UI_BG)
+        self.scenario_tab = tk.Frame(self.tabs, bg=UI_BG)
+        self.pets_tab = tk.Frame(self.tabs, bg=UI_BG)
 
         self.tabs.add(self.status_tab, text="Status")
         self.tabs.add(self.actions_tab, text="Ações")
@@ -210,7 +216,7 @@ class TamagotchiApp:
             self.status_tab,
             text="",
             font=("Arial", 13, "bold"),
-            bg="#f2f2f2",
+            bg=UI_BG,
             wraplength=300
         )
         self.pet_label.pack(pady=8)
@@ -219,12 +225,12 @@ class TamagotchiApp:
             self.status_tab,
             text="",
             font=("Arial", 10),
-            bg="#f2f2f2",
+            bg=UI_BG,
             justify="center"
         )
         self.info_label.pack(pady=5)
 
-        self.status_frame = tk.Frame(self.status_tab, bg="#f2f2f2")
+        self.status_frame = tk.Frame(self.status_tab, bg=UI_BG)
         self.status_frame.pack(fill="x", pady=10, padx=8)
 
         self.create_status_bar("Fome", "hunger")
@@ -238,7 +244,7 @@ class TamagotchiApp:
             self.actions_tab,
             text="Ações do Pet",
             font=("Arial", 15, "bold"),
-            bg="#f2f2f2"
+            bg=UI_BG
         )
         actions_title.pack(pady=12)
 
@@ -246,7 +252,7 @@ class TamagotchiApp:
             self.actions_tab,
             text="Escolha uma ação para o pet selecionado.",
             font=("Arial", 10),
-            bg="#f2f2f2",
+            bg=UI_BG,
             wraplength=280
         )
         actions_description.pack(pady=4)
@@ -276,7 +282,7 @@ class TamagotchiApp:
             self.scenario_tab,
             text="Trocar Cenário",
             font=("Arial", 15, "bold"),
-            bg="#f2f2f2"
+            bg=UI_BG
         )
         scenario_title.pack(pady=12)
 
@@ -284,7 +290,7 @@ class TamagotchiApp:
             self.scenario_tab,
             text="Cada pet pode estar em um cenário diferente.",
             font=("Arial", 10),
-            bg="#f2f2f2",
+            bg=UI_BG,
             wraplength=280
         )
         scenario_description.pack(pady=4)
@@ -306,17 +312,17 @@ class TamagotchiApp:
             )
             button.pack(pady=7)
     def create_status_bar(self, label_text, key):
-        frame = tk.Frame(self.status_frame, bg="#f2f2f2")
+        frame = tk.Frame(self.status_frame, bg=UI_BG)
         frame.pack(fill="x", pady=5)
 
-        top_line = tk.Frame(frame, bg="#f2f2f2")
+        top_line = tk.Frame(frame, bg=UI_BG)
         top_line.pack(fill="x")
 
         label = tk.Label(
             top_line,
             text=label_text,
             font=("Arial", 10, "bold"),
-            bg="#f2f2f2",
+            bg=UI_BG,
             anchor="w"
         )
         label.pack(side="left")
@@ -326,7 +332,7 @@ class TamagotchiApp:
             text="100/100",
             width=8,
             font=("Arial", 9),
-            bg="#f2f2f2",
+            bg=UI_BG,
             anchor="e"
         )
         value_label.pack(side="right")
@@ -347,7 +353,7 @@ class TamagotchiApp:
         }
 
     def load_image(self, relative_path):
-        path = os.path.abspath(relative_path)
+        path = resource_path(relative_path)
 
         if not os.path.exists(path):
             return None
@@ -422,16 +428,20 @@ class TamagotchiApp:
             # Destaque dourado (animado) — criado antes da sombra preta
             if is_selected:
                 state["canvas_highlight"] = self.canvas.create_oval(
-                    px - 44, py + 34, px + 44, py + 50,
-                    fill="#FFD700", outline="", stipple="gray50"
+                    px - 44, py + 52, px + 44, py + 68,
+                    fill=SELECTED_PINK,
+                    outline="",
+                    stipple="gray50"
                 )
             else:
                 state["canvas_highlight"] = None
 
-            # Sombra preta
+            # Sombra preta mais baixa, próxima dos pés
             state["canvas_shadow"] = self.canvas.create_oval(
-                px - 35, py + 36, px + 35, py + 47,
-                fill="#000000", outline="", stipple="gray50"
+                px - 35, py + 56, px + 35, py + 68,
+                fill="#000000",
+                outline="",
+                stipple="gray50"
             )
 
             # Imagem ou emoji do pet
@@ -448,10 +458,28 @@ class TamagotchiApp:
                     anchor="center"
                 )
 
-            # Nome do pet
-            name_color = "#FFD700" if is_selected else "#ffffff"
+            # Nome do pet com contorno preto para melhor legibilidade
+            name_color = SELECTED_PINK if is_selected else CANVAS_NAME_NORMAL
+            name_y = py - 65
+
+            state["canvas_name_outline"] = []
+
+            for ox, oy in [
+                (-1, 0), (1, 0), (0, -1), (0, 1),
+                (-1, -1), (1, -1), (-1, 1), (1, 1)
+            ]:
+                outline_item = self.canvas.create_text(
+                    px + ox,
+                    name_y + oy,
+                    text=pet.name,
+                    font=("Arial", 13, "bold"),
+                    fill=CANVAS_NAME_OUTLINE
+                )
+                state["canvas_name_outline"].append(outline_item)
+
             state["canvas_name"] = self.canvas.create_text(
-                px, py - 65,
+                px,
+                name_y,
                 text=pet.name,
                 font=("Arial", 13, "bold"),
                 fill=name_color
@@ -529,17 +557,30 @@ class TamagotchiApp:
             if state["canvas_highlight"]:
                 self.canvas.coords(
                     state["canvas_highlight"],
-                    px - 44, state["y"] + 34,
-                    px + 44, state["y"] + 50
+                    px - 44, state["y"] + 52,
+                    px + 44, state["y"] + 68
                 )
+
             if state["canvas_shadow"]:
                 self.canvas.coords(
                     state["canvas_shadow"],
-                    px - 35, state["y"] + 36,
-                    px + 35, state["y"] + 47
+                    px - 35, state["y"] + 56,
+                    px + 35, state["y"] + 68
                 )
+
             if state["canvas_pet"]:
                 self.canvas.coords(state["canvas_pet"], px, display_y)
+
+            if state.get("canvas_name_outline"):
+                name_y = display_y - 68
+                offsets = [
+                    (-1, 0), (1, 0), (0, -1), (0, 1),
+                    (-1, -1), (1, -1), (-1, 1), (1, 1)
+                ]
+
+                for item, (ox, oy) in zip(state["canvas_name_outline"], offsets):
+                    self.canvas.coords(item, px + ox, name_y + oy)
+
             if state["canvas_name"]:
                 self.canvas.coords(state["canvas_name"], px, display_y - 68)
 
@@ -626,9 +667,12 @@ class TamagotchiApp:
             return
         open_minigame_selector(self.root, self.pet, self._on_minigame_finish)
 
-    def _on_minigame_finish(self, coins, result):
+    def _on_minigame_finish(self, coins, result, happiness=0):
         self.refresh_after_action()
-        messagebox.showinfo("Minijogo", f"{result}\n+{coins} moedas para {self.pet.name}!")
+        messagebox.showinfo(
+            "Minijogo",
+            f"{result}\n+{coins} moedas para {self.pet.name}!\n+{happiness} felicidade"
+        )
 
     def change_scenario(self, scenario):
         self.pet.change_scenario(scenario)
@@ -737,22 +781,22 @@ class TamagotchiApp:
             self.pets_tab,
             text="Selecionar Pet",
             font=("Arial", 15, "bold"),
-            bg="#f2f2f2"
+            bg=UI_BG
         ).pack(pady=10)
 
         tk.Label(
             self.pets_tab,
-            text="Clique em um pet para ver seus\nstatus e realizar ações nele.\nO pet selecionado fica destacado\nem dourado no cenário.",
+            text="Clique em um pet para ver seus\nstatus e realizar ações nele.\nO pet selecionado fica destacado\nem rosa no cenário.",
             font=("Arial", 10),
-            bg="#f2f2f2",
+            bg=UI_BG,
             justify="center"
         ).pack(pady=4)
 
-        separator = tk.Frame(self.pets_tab, height=2, bg="#cccccc")
+        separator = tk.Frame(self.pets_tab, height=2, bg=UI_BORDER)
         separator.pack(fill="x", pady=8, padx=10)
 
         self.pet_buttons = []
-        grid = tk.Frame(self.pets_tab, bg="#f2f2f2")
+        grid = tk.Frame(self.pets_tab, bg=UI_BG)
         grid.pack(pady=5)
 
         for index, pet in enumerate(self.party.pets):
@@ -771,22 +815,35 @@ class TamagotchiApp:
 
     def update_pet_buttons(self):
         selected = self.party.current_pet_index
+
         for i, btn in enumerate(self.pet_buttons):
             if i == selected:
-                btn.config(bg="#FFD700", relief="sunken", font=("Arial", 10, "bold"))
+                btn.config(
+                    bg=SELECTED_PINK,
+                    activebackground=SELECTED_PINK,
+                    fg="white",
+                    relief="sunken",
+                    font=("Arial", 10, "bold")
+                )
             else:
-                btn.config(bg="SystemButtonFace", relief="raised", font=("Arial", 10))
+                btn.config(
+                    bg=UI_BG,
+                    activebackground=UI_BORDER,
+                    fg="black",
+                    relief="raised",
+                    font=("Arial", 10)
+                )
 
     def create_pet_selector(self, parent):
         selector_title = tk.Label(
             parent,
             text="Ver Status do Pet",
             font=("Arial", 15, "bold"),
-            bg="#f2f2f2"
+            bg=UI_BG
         )
         selector_title.pack(pady=3)
 
-        selector_grid = tk.Frame(parent, bg="#f2f2f2")
+        selector_grid = tk.Frame(parent, bg=UI_BG)
         selector_grid.pack()
 
         for index, pet in enumerate(self.party.pets):
@@ -797,18 +854,3 @@ class TamagotchiApp:
                 command=lambda i=index: self.select_pet(i)
             )
             button.grid(row=index // 2, column=index % 2, padx=4, pady=3)
-
-def open_minigames(self):
-    open_minigame_selector(
-        self.root,
-        self.pet,
-        self.on_minigame_finish
-    )
-
-
-def on_minigame_finish(self, coins, result, happiness=0):
-    messagebox.showinfo(
-        "Minijogo",
-        f"{result}\n+{coins} moedas\n+{happiness} felicidade"
-    )
-    self.refresh_after_action()
