@@ -34,9 +34,9 @@ def load_png(relative_path, subsample=1):
 # ---------------------------------------------------------------------------
 DIFFICULTY_CONFIG = {
     "memory": {
-        "fácil":  {"reward_mult": 1.0, "grid": 4, "time_limit": 90},
-        "médio":  {"reward_mult": 1.5, "grid": 5, "time_limit": 60},
-        "difícil":{"reward_mult": 2.2, "grid": 6, "time_limit": 40},
+        "fácil":  {"reward_mult": 1.0, "cols": 3, "rows": 4, "time_limit": 90},
+        "médio":  {"reward_mult": 1.5, "cols": 4, "rows": 4, "time_limit": 60},
+        "difícil":{"reward_mult": 2.2, "cols": 4, "rows": 6, "time_limit": 40},
     },
     "dino": {
         "fácil":  {"reward_mult": 1.0, "obs_density": 0.6, "survive_time": 12},
@@ -80,6 +80,12 @@ def _scaled_reward(key, difficulty, won):
     mult = DIFFICULTY_CONFIG[key][difficulty]["reward_mult"]
     return {k: max(1, int(v * mult)) for k, v in base.items()}
 
+def _emoji_bar(value, emoji, step):
+    """Converte valor numérico em fileira de emojis (arredondado pelo step)."""
+    count = max(1, round(value / step))
+    return emoji * count
+
+
 
 # ---------------------------------------------------------------------------
 # Tela 1 — Seletor de minijogo
@@ -87,15 +93,17 @@ def _scaled_reward(key, difficulty, won):
 def open_minigame_selector(parent, pet, party, on_finish):
     win = tk.Toplevel(parent)
     win.title("Minijogos")
-    win.geometry("520x620")
     win.resizable(False, False)
     win.grab_set()
     win.configure(bg="#FFF0F6")
 
-    tk.Label(win, text="🎮  Minijogos", font=("Arial", 18, "bold"),
-             bg="#FFF0F6", fg="#C2185B").pack(pady=(14, 2))
-    tk.Label(win, text=f"💰  Moedas: {party.money}", font=("Arial", 11),
-             bg="#FFF0F6", fg="#AD1457").pack(pady=(0, 10))
+    # Cabeçalho fixo
+    header = tk.Frame(win, bg="#FFF0F6")
+    header.pack(fill="x", pady=(14, 4))
+    tk.Label(header, text="🎮  Minijogos", font=("Arial", 18, "bold"),
+             bg="#FFF0F6", fg="#C2185B").pack()
+    tk.Label(header, text=f"💰  Moedas: {party.money}", font=("Arial", 11),
+             bg="#FFF0F6", fg="#AD1457").pack()
 
     # Ícone do pet
     icon_path = resource_path(f"assets/icons/{pet.asset_key}_icon.png")
@@ -106,11 +114,11 @@ def open_minigame_selector(parent, pet, party, on_finish):
         except tk.TclError:
             pass
     if pet_icon:
-        lbl = tk.Label(win, image=pet_icon, bg="#FFF0F6", bd=0, highlightthickness=0)
+        lbl = tk.Label(header, image=pet_icon, bg="#FFF0F6", bd=0, highlightthickness=0)
         lbl.image = pet_icon
         lbl.pack(pady=4)
     else:
-        tk.Label(win, text=pet.name, font=("Arial", 13, "bold"),
+        tk.Label(header, text=pet.name, font=("Arial", 13, "bold"),
                  bg="#FFF0F6", fg="#C2185B").pack(pady=4)
 
     games = [
@@ -121,21 +129,21 @@ def open_minigame_selector(parent, pet, party, on_finish):
         ("🌀  Labirinto",       "maze"),
     ]
 
-    btn_frame = tk.Frame(win, bg="#FFF0F6")
-    btn_frame.pack(fill="both", expand=True, padx=20, pady=6)
-
     for label, key in games:
         btn = tk.Button(
-            btn_frame, text=label,
-            font=("Arial", 12, "bold"),
+            win, text=label,
+            font=("Arial", 13, "bold"),
             bg="#F8BBD0", fg="#880E4F",
             activebackground="#F48FB1", activeforeground="#880E4F",
             relief="flat", bd=0,
             cursor="hand2",
-            width=36, height=3,
+            width=30, height=2,
             command=lambda k=key, w=win: _open_difficulty(w, k, pet, party, on_finish)
         )
-        btn.pack(pady=5)
+        btn.pack(fill="x", padx=24, pady=6)
+
+    win.update_idletasks()
+    win.geometry(f"{win.winfo_reqwidth() + 40}x{min(win.winfo_reqheight() + 20, 680)}")
 
 
 # ---------------------------------------------------------------------------
@@ -154,26 +162,56 @@ def _open_difficulty(selector_win, key, pet, party, on_finish):
 
     win = tk.Toplevel()
     win.title("Dificuldade")
-    win.geometry("620x700")
     win.resizable(False, False)
     win.grab_set()
     win.configure(bg="#FFF0F6")
 
-    tk.Label(win, text=game_names[key], font=("Arial", 16, "bold"),
+    # ── Cabeçalho fixo ──
+    header_frame = tk.Frame(win, bg="#FFF0F6")
+    header_frame.pack(fill="x")
+    tk.Label(header_frame, text=game_names[key], font=("Arial", 16, "bold"),
              bg="#FFF0F6", fg="#C2185B").pack(pady=(14, 4))
-    tk.Label(win, text="Escolha a dificuldade:", font=("Arial", 11),
-             bg="#FFF0F6", fg="#aaaaaa").pack(pady=(0, 10))
+    tk.Label(header_frame, text="Escolha a dificuldade:", font=("Arial", 11),
+             bg="#FFF0F6", fg="#AD1457").pack(pady=(0, 10))
+
+    # ── Área rolável ──
+    scroll_canvas = tk.Canvas(win, bg="#FFF0F6", highlightthickness=0,
+                               width=520)
+    scrollbar = tk.Scrollbar(win, orient="vertical", command=scroll_canvas.yview)
+    scroll_canvas.configure(yscrollcommand=scrollbar.set)
+    scrollbar.pack(side="right", fill="y")
+    scroll_canvas.pack(side="left", fill="both", expand=True)
+
+    scroll_frame = tk.Frame(scroll_canvas, bg="#FFF0F6")
+    scroll_win_id = scroll_canvas.create_window((0, 0), window=scroll_frame,
+                                                 anchor="nw")
+
+    def _on_frame_configure(e):
+        scroll_canvas.configure(scrollregion=scroll_canvas.bbox("all"))
+
+    def _on_canvas_configure(e):
+        scroll_canvas.itemconfig(scroll_win_id, width=e.width)
+
+    scroll_frame.bind("<Configure>", _on_frame_configure)
+    scroll_canvas.bind("<Configure>", _on_canvas_configure)
+
+    # Scroll com mouse wheel
+    def _on_mousewheel(e):
+        scroll_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+    scroll_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+    win.protocol("WM_DELETE_WINDOW", lambda: (
+        scroll_canvas.unbind_all("<MouseWheel>"), win.destroy()
+    ))
 
     for diff in DIFF_LABELS:
         cfg = DIFFICULTY_CONFIG[key][diff]
         wr = _scaled_reward(key, diff, True)
         lr = _scaled_reward(key, diff, False)
 
-        # Monta descrição de parâmetros
         params_text = _diff_params_text(key, cfg)
 
-        frame = tk.Frame(win, bg=DIFF_COLORS[diff], bd=0)
-        frame.pack(fill="x", padx=18, pady=6)
+        frame = tk.Frame(scroll_frame, bg=DIFF_COLORS[diff], bd=0)
+        frame.pack(fill="x", padx=18, pady=8)
 
         inner = tk.Frame(frame, bg="#FFF0F6", padx=10, pady=8)
         inner.pack(fill="x", padx=2, pady=2)
@@ -185,29 +223,48 @@ def _open_difficulty(selector_win, key, pet, party, on_finish):
                  fg=DIFF_COLORS[diff], anchor="w").pack(side="left")
 
         tk.Label(inner, text=params_text, font=("Arial", 9),
-                 bg="#FFF0F6", fg="#cccccc", anchor="w", justify="left").pack(fill="x", pady=(2, 4))
+                 bg="#FFF0F6", fg="#880E4F", anchor="w", justify="left").pack(fill="x", pady=(2, 4))
 
-        reward_text = (
-            f"Vitória: +{wr['coins']} moedas  +{wr['happiness']} felicidade  +{wr['xp']} XP\n"
-            f"Derrota: +{lr['coins']} moedas  +{lr['happiness']} felicidade  +{lr['xp']} XP"
-        )
-        tk.Label(inner, text=reward_text, font=("Arial", 9),
-                 bg="#FFF0F6", fg="#ffd700", anchor="w", justify="left").pack(fill="x")
+        win_coins_bar = _emoji_bar(wr['coins'],    "💰", 5)
+        win_happy_bar = _emoji_bar(wr['happiness'], "😊", 4)
+        win_xp_bar    = _emoji_bar(wr['xp'],        "⭐", 10)
+        lose_coins_bar = _emoji_bar(lr['coins'],    "💰", 5)
+        lose_happy_bar = _emoji_bar(lr['happiness'],"😊", 4)
+        lose_xp_bar    = _emoji_bar(lr['xp'],       "⭐", 10)
+
+        tk.Label(inner, text="🏆 Vitória", font=("Arial", 9, "bold"),
+                 bg="#FFF0F6", fg="#4caf50", anchor="w").pack(fill="x", pady=(4,0))
+        tk.Label(inner, text=f"  {win_coins_bar}  {win_happy_bar}  {win_xp_bar}",
+                 font=("Arial", 10), bg="#FFF0F6", fg="#880E4F",
+                 anchor="w", justify="left").pack(fill="x")
+        tk.Label(inner, text="💀 Derrota", font=("Arial", 9, "bold"),
+                 bg="#FFF0F6", fg="#e53935", anchor="w").pack(fill="x", pady=(2,0))
+        tk.Label(inner, text=f"  {lose_coins_bar}  {lose_happy_bar}  {lose_xp_bar}",
+                 font=("Arial", 10), bg="#FFF0F6", fg="#880E4F",
+                 anchor="w", justify="left").pack(fill="x")
 
         tk.Button(
             inner, text="▶  Jogar",
-            font=("Arial", 10, "bold"),
-            bg=DIFF_COLORS[diff], fg="#AD1457",
-            activebackground="#ffffff", activeforeground="#000000",
+            font=("Arial", 11, "bold"),
+            bg=DIFF_COLORS[diff], fg="white",
+            activebackground="#880E4F", activeforeground="white",
             relief="flat", cursor="hand2",
             command=lambda d=diff, w=win: _launch(w, key, d, pet, party, on_finish)
-        ).pack(anchor="e", pady=(4, 0))
+        ).pack(anchor="e", pady=(6, 0))
+
+
+    # Calcula altura necessária e limita a 90% da tela
+    win.update_idletasks()
+    content_h = scroll_frame.winfo_reqheight() + header_frame.winfo_reqheight() + 20
+    screen_h  = win.winfo_screenheight()
+    final_h   = min(content_h, int(screen_h * 0.88))
+    win.geometry(f"560x{final_h}")
 
 
 def _diff_params_text(key, cfg):
     """Gera linha de parâmetros legível para cada jogo."""
     if key == "memory":
-        return f"Grade: {cfg['grid']}×{cfg['grid']}  |  Tempo: {cfg['time_limit']}s"
+        return f"Grade: {cfg['cols']}×{cfg['rows']}  |  Tempo: {cfg['time_limit']}s"
     if key == "dino":
         return f"Tempo para sobreviver: {cfg['survive_time']}s  |  Obstáculos: {'mais' if cfg['obs_density'] > 1 else 'normal' if cfg['obs_density'] == 1 else 'menos'}"
     if key == "flappy":
@@ -314,44 +371,39 @@ class MemoryGame(BaseGame):
     ALL_FIGS = [f"assets/minigames/memory_fig{i}.png" for i in range(1, 19)]
 
     def __init__(self, pet, party, difficulty, cfg, on_finish):
-        self.grid_n = cfg["grid"]           # 4, 5 ou 6
+        self.cols = cfg["cols"]
+        self.rows = cfg["rows"]
         self.time_limit = cfg["time_limit"]
-        n_pairs = (self.grid_n * self.grid_n) // 2
+        total_cards = self.cols * self.rows          # sempre par por construção
+        n_pairs = total_cards // 2
 
-        # Dimensões da janela: grade + espaço para info
-        cell = 72 if self.grid_n <= 4 else 58 if self.grid_n == 5 else 50
+        # Tamanho de célula adaptativo
+        cell = min(80, max(52, 360 // max(self.cols, self.rows)))
         self.cell_size = cell
-        W = self.grid_n * cell + 120
-        H = self.grid_n * cell + 220
+        W = self.cols * cell + 24
+        H = self.rows * cell + 80   # espaço para barra de info
 
         super().__init__("🃏 Jogo da Memória", W, H,
                          pet, party, difficulty, cfg, on_finish, "memory")
 
         self.win.configure(bg=DEFAULT_PINK_BG)
 
-        # Carrega background
         self.bg_img = load_png("assets/minigames/memory_background.png")
 
-        # Carrega figuras PNG (fallback para emojis se não houver)
-        self.fig_images = []
         FALLBACK_EMOJIS = ["🐱","🐶","🐸","🐧","🦊","🐺","🐷","🐮",
                            "🐯","🐻","🦁","🐨","🦄","🐙","🦋","🐢","🦀","🦜"]
+        self.fig_images = []
         for i in range(n_pairs):
             img = load_png(self.ALL_FIGS[i % len(self.ALL_FIGS)])
             self.fig_images.append(img)
         self.fig_fallbacks = FALLBACK_EMOJIS[:n_pairs]
 
-        # Estado do jogo
-        total = self.grid_n * self.grid_n
-        indices = list(range(n_pairs)) * 2
-        # Se grade ímpar (5×5=25 cartas), adiciona uma carta extra repetindo o primeiro par
-        if total % 2 == 1:
-            indices.append(0)
+        indices = list(range(n_pairs)) * 2  # sempre par
         random.shuffle(indices)
-        self.card_ids = indices   # índice da figura para cada carta
+        self.card_ids = indices
 
         self.buttons = []
-        self.card_imgs = []   # mantém referências de imagens nos botões
+        self.card_imgs = []
         self.flipped = []
         self.matched = set()
         self.locked = False
@@ -369,30 +421,28 @@ class MemoryGame(BaseGame):
                                    bg="#FFF0F6", fg="#AD1457", anchor="e")
         self.timer_lbl.pack(side="right")
 
-        # Canvas de fundo + grade de botões sobre ele
-        self.canvas = tk.Canvas(self.win, width=W - 20, height=self.grid_n * cell,
+        self.canvas = tk.Canvas(self.win, width=W - 4, height=self.rows * cell,
                                 bg="#FFF0F6", highlightthickness=0)
-        self.canvas.pack(padx=10, pady=4)
+        self.canvas.pack(padx=2, pady=4)
 
         if self.bg_img:
             self.canvas.create_image(0, 0, image=self.bg_img, anchor="nw")
 
-        # Frame de botões posicionado sobre o canvas
         self.grid_frame = tk.Frame(self.canvas, bg="#FFF0F6")
-        self.canvas.create_window(5, 5, anchor="nw", window=self.grid_frame)
+        self.canvas.create_window(4, 4, anchor="nw", window=self.grid_frame)
 
-        total_cards = self.grid_n * self.grid_n
         for i in range(total_cards):
             btn = tk.Button(
                 self.grid_frame,
-                text="?", width=4 if cell >= 58 else 3, height=2,
-                font=("Arial", 14 if cell >= 58 else 11, "bold"),
-                bg="#FFF0F6", fg="#AD1457",
-                activebackground="#533483",
+                text="?",
+                width=max(3, cell // 16), height=max(1, cell // 32),
+                font=("Arial", max(10, cell // 6), "bold"),
+                bg="#F8BBD0", fg="#AD1457",
+                activebackground="#F48FB1",
                 relief="flat", bd=1,
                 command=lambda idx=i: self._flip(idx)
             )
-            btn.grid(row=i // self.grid_n, column=i % self.grid_n, padx=2, pady=2)
+            btn.grid(row=i // self.cols, column=i % self.cols, padx=2, pady=2)
             self.buttons.append(btn)
             self.card_imgs.append(None)
 
@@ -402,8 +452,8 @@ class MemoryGame(BaseGame):
     def _update_info(self):
         pairs_found = len(self.matched) // 2
         total_pairs = len(self.card_ids) // 2
-        self.info_lbl.config(text=f"Pares: {pairs_found}/{total_pairs}")
-        color = "#ffd700" if self.time_left > 15 else "#e53935"
+        self.info_lbl.config(text=f"🃏 {pairs_found}/{total_pairs} pares")
+        color = "#AD1457" if self.time_left > 15 else "#e53935"
         self.timer_lbl.config(text=f"⏱ {self.time_left}s", fg=color)
 
     def _tick(self):
@@ -442,7 +492,7 @@ class MemoryGame(BaseGame):
             self.buttons[a].config(bg="#1b5e20")
             self.buttons[b].config(bg="#1b5e20")
             self._update_info()
-            if len(self.matched) >= len(self.card_ids) - (len(self.card_ids) % 2 == 1):
+            if len(self.matched) >= len(self.card_ids):
                 self._reward(True)
                 return
         else:
