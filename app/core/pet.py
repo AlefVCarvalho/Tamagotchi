@@ -24,6 +24,8 @@ class Pet:
 
         self.inventory = []
 
+        # Mantido para compatibilidade com saves antigos. O cenario ativo do
+        # jogo agora fica em PetParty.scenario.
         self.scenario = "Casa"
 
     def generate_asset_key(self, name):
@@ -56,13 +58,13 @@ class Pet:
 
     def use_medicine(self):
         if not self.sick:
-            return f"{self.name} não está doente."
+            return f"{self.name} nao esta doente."
         self.sick = False
         self.disease_name = None
         self.health += 40
         self.limit_attributes()
         self.update_condition()
-        return f"{self.name} foi tratado e está melhor."
+        return f"{self.name} foi tratado e esta melhor."
 
     def use_item(self, item):
         if item.full_restore:
@@ -94,11 +96,13 @@ class Pet:
         self.limit_attributes()
 
     def change_scenario(self, scenario):
+        # Compatibilidade com saves/codigo antigo. A UI atual usa
+        # PetParty.change_scenario(), pois o cenario e global.
         valid_scenarios = ["Casa", "Piscina", "Zoo", "Palco de Show"]
         if scenario not in valid_scenarios:
-            return "Cenário inválido."
+            return "Cenario invalido."
         self.scenario = scenario
-        return f"Cenário alterado para {scenario}."
+        return f"Cenario alterado para {scenario}."
 
     def pass_time(self):
         self.age += 1
@@ -135,21 +139,13 @@ class Pet:
             self.collapsed = False
 
     def get_mood(self):
+        # Linha curta solicitada para a UI: apenas estado geral de saude.
         if self.collapsed:
             return "desmaiado"
         if self.sick:
-            return f"doente: {self.disease_name}"
-        if self.hunger < 25:
-            return "com fome"
-        if self.energy < 25:
-            return "cansado"
-        if self.hygiene < 25:
-            return "sujo"
-        if self.happiness > 75:
-            return "muito feliz"
-        if self.happiness < 30:
-            return "triste"
-        return "normal"
+            disease = self.disease_name or "sem diagnostico"
+            return f"doente: {disease}"
+        return "saud\u00e1vel"
 
     def to_dict(self):
         return {

@@ -15,6 +15,10 @@ PET_CONFIG = [
 
 XP_PER_LEVEL = 100
 
+# Cenários válidos do jogo. Agora o cenário ativo é global.
+VALID_SCENARIOS = ["Casa", "Piscina", "Zoo", "Palco de Show"]
+DEFAULT_SCENARIO = "Casa"
+
 # ---------------------------------------------------------------------------
 # Configuração de visuais alternativos por cenário
 # ---------------------------------------------------------------------------
@@ -31,6 +35,13 @@ SKIN_COIN_PRICE = {
 }
 
 ALL_SCENARIO_KEYS = ["casa", "piscina", "zoo", "palco"]
+SCENARIO_NAME_TO_KEY = {
+    "Casa": "casa",
+    "Piscina": "piscina",
+    "Zoo": "zoo",
+    "Palco de Show": "palco",
+}
+SCENARIO_KEY_TO_NAME = {v: k for k, v in SCENARIO_NAME_TO_KEY.items()}
 
 
 class PetParty:
@@ -43,18 +54,21 @@ class PetParty:
         self.xp    = 0
         self.level = 0
 
+        # Cenário global: todos os pets aparecem no cenário selecionado.
+        self.current_scenario = DEFAULT_SCENARIO
+
         # Visuais alternativos desbloqueados: {pet_asset_key: set(scenario_keys)}
         self._alt_unlocked: dict[str, set] = {}
 
         # Visuais alternativos equipados: {pet_asset_key: set(scenario_keys)}
-        # Um visual equipado substitui o padrão quando o pet está no cenário correspondente
+        # Um visual equipado substitui o padrão quando o cenário global corresponde.
         self._alt_equipped: dict[str, set] = {}
 
     # ------------------------------------------------------------------
     # Nível e XP
     # ------------------------------------------------------------------
     def add_xp(self, amount):
-        self.xp += amount
+        self.xp += max(0, int(amount))
         leveled_up = False
         while self.xp >= self._xp_for_next_level():
             self.xp -= self._xp_for_next_level()
@@ -94,6 +108,28 @@ class PetParty:
             self.current_pet_index = index
             return True
         return False
+
+    # ------------------------------------------------------------------
+    # Cenário global
+    # ------------------------------------------------------------------
+    def get_current_scenario(self):
+        return self.current_scenario
+
+    def get_current_scenario_key(self):
+        return SCENARIO_NAME_TO_KEY.get(self.current_scenario, "casa")
+
+    def change_scenario(self, scenario):
+        if scenario not in VALID_SCENARIOS:
+            return False, "Cenário inválido."
+        self.current_scenario = scenario
+        self._sync_legacy_pet_scenarios()
+        return True, f"Cenário global alterado para {scenario}."
+
+    def _sync_legacy_pet_scenarios(self):
+        # Mantém o campo Pet.scenario coerente em saves antigos/novos,
+        # mas a lógica visual usa sempre current_scenario.
+        for pet in self.pets:
+            pet.scenario = self.current_scenario
 
     # ------------------------------------------------------------------
     # Visuais alternativos
@@ -144,9 +180,9 @@ class PetParty:
 
     def get_active_skin_key(self, pet, scenario_key: str) -> str:
         """
-        Retorna o sufixo de arquivo a usar para o pet no cenário dado.
-        Se o visual alternativo estiver equipado → '{asset_key}_{scenario_key}_alternative'
-        Caso contrário                           → '{asset_key}_{scenario_key}'
+        Retorna o sufixo de arquivo a usar para o pet no cenário global dado.
+        Se o visual alternativo estiver equipado para esse cenário → '{asset_key}_{scenario_key}_alternative'
+        Caso contrário                                           → '{asset_key}_{scenario_key}'
         """
         if self.alt_is_equipped(pet, scenario_key):
             return f"{pet.asset_key}_{scenario_key}_alternative"
@@ -156,11 +192,13 @@ class PetParty:
     # Serialização
     # ------------------------------------------------------------------
     def to_dict(self):
+        self._sync_legacy_pet_scenarios()
         return {
             "money": self.money,
             "xp":    self.xp,
             "level": self.level,
             "current_pet_index": self.current_pet_index,
+            "current_scenario": self.current_scenario,
             "pets":  [pet.to_dict() for pet in self.pets],
             "alt_unlocked": {k: list(v) for k, v in self._alt_unlocked.items()},
             "alt_equipped":  {k: list(v) for k, v in self._alt_equipped.items()},
@@ -182,6 +220,16 @@ class PetParty:
         party.current_pet_index = data.get("current_pet_index", 0)
         if not (0 <= party.current_pet_index < len(party.pets)):
             party.current_pet_index = 0
+
+        saved_scenario = data.get("current_scenario")
+        if saved_scenario not in VALID_SCENARIOS:
+            # Compatibilidade: saves antigos guardavam cenário em cada pet.
+            current_pet = party.pets[party.current_pet_index]
+            saved_scenario = getattr(current_pet, "scenario", DEFAULT_SCENARIO)
+        if saved_scenario not in VALID_SCENARIOS:
+            saved_scenario = DEFAULT_SCENARIO
+        party.current_scenario = saved_scenario
+        party._sync_legacy_pet_scenarios()
 
         raw_unlocked = data.get("alt_unlocked", {})
         party._alt_unlocked = {k: set(v) for k, v in raw_unlocked.items()}

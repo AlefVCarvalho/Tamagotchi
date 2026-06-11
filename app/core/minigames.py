@@ -61,11 +61,13 @@ DIFFICULTY_CONFIG = {
 }
 
 BASE_REWARDS = {
-    "memory":    {"win": {"coins": 18, "happiness": 12, "xp": 30}, "lose": {"coins": 5,  "happiness": 4, "xp": 8}},
-    "dino":      {"win": {"coins": 15, "happiness": 10, "xp": 25}, "lose": {"coins": 4,  "happiness": 3, "xp": 6}},
-    "flappy":    {"win": {"coins": 20, "happiness": 14, "xp": 35}, "lose": {"coins": 5,  "happiness": 4, "xp": 8}},
-    "crossroad": {"win": {"coins": 14, "happiness": 10, "xp": 25}, "lose": {"coins": 4,  "happiness": 3, "xp": 6}},
-    "maze":      {"win": {"coins": 22, "happiness": 16, "xp": 40}, "lose": {"coins": 6,  "happiness": 5, "xp": 10}},
+    # Vitória mantém recompensas boas; derrota agora dá apenas recompensa simbólica.
+    # Isso reduz farm por perder rápido, sem punir completamente quem tentou jogar.
+    "memory":    {"win": {"coins": 18, "happiness": 12, "xp": 30}, "lose": {"coins": 1, "happiness": 1, "xp": 2}},
+    "dino":      {"win": {"coins": 15, "happiness": 10, "xp": 25}, "lose": {"coins": 1, "happiness": 1, "xp": 2}},
+    "flappy":    {"win": {"coins": 20, "happiness": 14, "xp": 35}, "lose": {"coins": 1, "happiness": 1, "xp": 2}},
+    "crossroad": {"win": {"coins": 14, "happiness": 10, "xp": 25}, "lose": {"coins": 1, "happiness": 1, "xp": 2}},
+    "maze":      {"win": {"coins": 22, "happiness": 16, "xp": 40}, "lose": {"coins": 2, "happiness": 1, "xp": 3}},
 }
 
 DIFF_LABELS = ["fácil", "médio", "difícil"]
@@ -73,6 +75,43 @@ DIFF_COLORS = {"fácil": "#4caf50", "médio": "#ff9800", "difícil": "#e53935"}
 DIFF_EMOJIS = {"fácil": "🟢", "médio": "🟡", "difícil": "🔴"}
 
 DEFAULT_PINK_BG = "#FFF0F6"
+
+MINIGAME_ASSETS_DIR = "assets/minigames"
+_MINIGAME_ASSETS_WARNING_SHOWN = False
+
+
+def validate_minigame_assets(show_warning=False):
+    """Garante que a pasta de assets dos minijogos exista no projeto.
+
+    Os minijogos continuam funcionando com fallbacks visuais mesmo sem imagens,
+    mas a pasta precisa existir para manter a estrutura esperada do projeto.
+    """
+    global _MINIGAME_ASSETS_WARNING_SHOWN
+
+    assets_dir = resource_path(MINIGAME_ASSETS_DIR)
+    if os.path.isdir(assets_dir):
+        return True
+
+    # Em modo desenvolvimento, cria a pasta automaticamente.
+    # Em executável empacotado, _MEIPASS pode ser somente leitura; nesse caso só avisa.
+    if not hasattr(sys, "_MEIPASS"):
+        try:
+            os.makedirs(assets_dir, exist_ok=True)
+        except OSError:
+            pass
+
+    if os.path.isdir(assets_dir):
+        return True
+
+    if show_warning and not _MINIGAME_ASSETS_WARNING_SHOWN:
+        _MINIGAME_ASSETS_WARNING_SHOWN = True
+        messagebox.showwarning(
+            "Assets de minijogos",
+            "A pasta assets/minigames/ não foi encontrada.\n"
+            "Os minijogos vão abrir com visuais de fallback, mas coloque os assets nessa pasta."
+        )
+
+    return False
 
 
 def _scaled_reward(key, difficulty, won):
@@ -91,6 +130,8 @@ def _emoji_bar(value, emoji, step):
 # Tela 1 — Seletor de minijogo
 # ---------------------------------------------------------------------------
 def open_minigame_selector(parent, pet, party, on_finish):
+    validate_minigame_assets(show_warning=True)
+
     win = tk.Toplevel(parent)
     win.title("Minijogos")
     win.resizable(False, False)
@@ -349,8 +390,9 @@ class BaseGame:
         self.pet.energy -= 4
         self.pet.hunger -= 2
         self.pet.limit_attributes()
-        self.party.add_xp(xp)
 
+        # O XP é aplicado apenas no app principal, dentro de _on_minigame_finish().
+        # Isso evita XP duplicado e mantém a lógica de level up em um único lugar.
         self.win.destroy()
         result = "Vitória! 🎉" if won else "Derrota! 😢"
         try:
@@ -359,8 +401,10 @@ class BaseGame:
             self.on_finish(coins, result)
 
     def _on_close(self):
-        if not self.finished:
-            self._reward(False)
+        if self.finished:
+            return
+        self.finished = True
+        self.win.destroy()
 
 
 # ===========================================================================
